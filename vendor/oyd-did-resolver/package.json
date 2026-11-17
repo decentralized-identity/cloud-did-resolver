@@ -20,7 +20,7 @@
   ],
   "sideEffects": false,
   "license": "MIT",
-  "packageManager": "pnpm@11.0.0",
+  "packageManager": "pnpm@11.28.12",
   "engines": {
     "node": ">=20"
   },

@@ -22,9 +22,11 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
+      # pnpm 11.28.12: Socket-checked (no CVE alerts). --pm-on-fail=ignore on every
+      # call keeps it from switching to a project's own packageManager version.
       - uses: pnpm/action-setup@v6
         with:
-          version: 11.0.0
+          version: 11.28.12
       - uses: actions/setup-node@v6
         with:
           node-version: 22.22.0
@@ -33,19 +35,19 @@ jobs:
         run: npm ci
       - name: Install TypeScript DID Resolver dependencies
         working-directory: vendor/did-resolver
-        run: pnpm install --frozen-lockfile
+        run: pnpm --pm-on-fail=ignore install --frozen-lockfile
       - name: Install forked driver cores (vendor/forks)
         run: npm run install:forks
       - name: Install ThisDID vendored driver dependencies
         run: |
           for d in $(npm run -s vendor:list); do
-            (cd vendor/$d && pnpm install --frozen-lockfile) || exit 1
+            (cd vendor/$d && pnpm --pm-on-fail=ignore install --frozen-lockfile) || exit 1
           done
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Verify TypeScript DID Resolver
         working-directory: vendor/did-resolver
-        run: pnpm run lint && pnpm run format:check && pnpm run test && pnpm run build
+        run: pnpm --pm-on-fail=ignore run lint && pnpm --pm-on-fail=ignore run format:check && pnpm --pm-on-fail=ignore run test && pnpm --pm-on-fail=ignore run build
       - name: Build forked driver cores (the wrappers compile against them)
         run: npm run build:forks
       - name: Verify forked driver cores (upstream suites under vitest)
@@ -53,7 +55,7 @@ jobs:
       - name: Verify ThisDID vendored driver packages
         run: |
           for d in $(npm run -s vendor:list); do
-            (cd vendor/$d && pnpm run format:check && pnpm test && pnpm run build) || exit 1
+            (cd vendor/$d && pnpm --pm-on-fail=ignore run format:check && pnpm --pm-on-fail=ignore test && pnpm --pm-on-fail=ignore run build) || exit 1
           done
       - name: Verify ThisDID
         run: npm run check
