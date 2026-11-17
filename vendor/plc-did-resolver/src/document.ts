@@ -22,8 +22,8 @@
  * their own policy before dereferencing a service endpoint.
  */
 
-import { p256 } from "@noble/curves/p256";
-import { secp256k1 } from "@noble/curves/secp256k1";
+import { p256 } from "@noble/curves/nist.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 
 const DID_PLC = /^did:plc:[a-z2-7]{24}$/;
 const DID_CORE_CONTEXT = "https://www.w3.org/ns/did/v1";
@@ -46,14 +46,14 @@ const PLC_KEY_CODECS: Record<
     name: "secp256k1",
     length: 33,
     check: (bytes) => {
-      secp256k1.ProjectivePoint.fromHex(bytes);
+      secp256k1.Point.fromBytes(bytes);
     },
   },
   0x1200: {
     name: "p256",
     length: 33,
     check: (bytes) => {
-      p256.ProjectivePoint.fromHex(bytes);
+      p256.Point.fromBytes(bytes);
     },
   },
 };

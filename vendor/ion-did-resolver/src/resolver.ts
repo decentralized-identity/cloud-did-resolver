@@ -35,7 +35,7 @@ import type {
   Service,
   VerificationMethod,
 } from "did-resolver";
-import { sha256 } from "@noble/hashes/sha256";
+import { sha256 } from "@noble/hashes/sha2.js";
 
 export interface IonResolverOptions {
   /** Anchored-state (short-form) endpoint base; `/identifiers/{did}` is

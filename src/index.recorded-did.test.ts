@@ -55,14 +55,17 @@ async function recordedDids(path: string, accept?: string) {
   return dids;
 }
 
-describe("analytics records the canonical DID", () => {
-  it("records a lower-case did:algo account as the upper-case DID", async () => {
+describe("analytics records the DID exactly as requested", () => {
+  it("keeps the case of a did:algo DID (did:algo is case-sensitive)", async () => {
     expect(
       await recordedDids(`/1.0/identifiers/${encodeURIComponent(LOWER)}`),
-    ).toEqual([UPPER]);
+    ).toEqual([LOWER]);
     expect(await recordedDids(`/${LOWER}`, "application/did+json")).toEqual([
-      UPPER,
+      LOWER,
     ]);
+    expect(
+      await recordedDids(`/1.0/identifiers/${encodeURIComponent(UPPER)}`),
+    ).toEqual([UPPER]);
   });
 
   it("records other DIDs exactly as requested", async () => {

@@ -1,6 +1,6 @@
-import { ed25519 } from "@noble/curves/ed25519";
-import { sha256 } from "@noble/hashes/sha256";
-import { keccak_256 } from "@noble/hashes/sha3";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 const DEFAULT_TIMEOUT_MS = 6000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 /** DID accounts are small (services + keys); bound before decoding. */
@@ -83,7 +83,7 @@ function base58Encode(bytes) {
 // ── program-derived addresses ───────────────────────────────────────────────
 function onEd25519Curve(bytes) {
     try {
-        ed25519.ExtendedPoint.fromHex(toHex(bytes));
+        ed25519.Point.fromBytes(bytes);
         return true;
     }
     catch {

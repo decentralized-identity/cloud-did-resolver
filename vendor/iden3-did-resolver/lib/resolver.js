@@ -1,4 +1,4 @@
-import { keccak_256 } from "@noble/hashes/sha3";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 const DEFAULT_TIMEOUT_MS = 6000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 /** Known State contract deployments (rpcUrl still must be injected). */

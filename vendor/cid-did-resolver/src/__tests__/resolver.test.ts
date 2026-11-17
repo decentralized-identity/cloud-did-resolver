@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CID } from "multiformats/cid";
 import * as jsonCodec from "multiformats/codecs/json";
 import { sha256 as cidHasher } from "multiformats/hashes/sha2";
-import { secp256k1 } from "@noble/curves/secp256k1";
-import { sha256 } from "@noble/hashes/sha256";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { getResolver } from "../resolver.js";
 import { ARCHON_NODE_DID, FIXTURE } from "./fixture.js";
 
@@ -78,7 +78,7 @@ function signed(op: Op, priv: Uint8Array, verificationMethod: string): Op {
     proof: {
       created: "2026-02-01T00:00:00.000Z",
       proofPurpose: "authentication",
-      proofValue: b64u(secp256k1.sign(msgHash, priv).toCompactRawBytes()),
+      proofValue: b64u(secp256k1.sign(msgHash, priv, { prehash: false })),
       type: "EcdsaSecp256k1Signature2019",
       verificationMethod,
     },

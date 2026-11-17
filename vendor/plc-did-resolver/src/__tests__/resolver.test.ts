@@ -373,9 +373,9 @@ describe("did:plc material, context and representation (ThisDID)", () => {
   });
 
   it("requires a terminated, minimal multicodec varint (R8.2)", async () => {
-    const { secp256k1 } = await import("@noble/curves/secp256k1");
+    const { secp256k1 } = await import("@noble/curves/secp256k1.js");
     const key = Array.from(
-      secp256k1.getPublicKey(secp256k1.utils.randomPrivateKey(), true),
+      secp256k1.getPublicKey(secp256k1.utils.randomSecretKey(), true),
     );
     serve(doc({ publicKeyMultibase: multibase([0xe7, 0x01, ...key]) }));
     expect((await resolve()).didResolutionMetadata.error).toBeUndefined();

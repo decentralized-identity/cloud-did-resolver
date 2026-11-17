@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DIDResolutionResult } from "did-resolver";
-import { ed25519 } from "@noble/curves/ed25519";
-import { secp256k1 } from "@noble/curves/secp256k1";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import {
   getResolver,
   jwkThumbprint,

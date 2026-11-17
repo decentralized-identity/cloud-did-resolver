@@ -1,5 +1,5 @@
-import { sha256 } from "@noble/hashes/sha256";
-import { blake2b } from "@noble/hashes/blake2b";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { blake2b } from "@noble/hashes/blake2.js";
 /** Chain ids read live from the networks themselves, 24 Aug 2026. */
 const CHAIN_IDS = {
     mainnet: "NetXdQprcVkpaWU",

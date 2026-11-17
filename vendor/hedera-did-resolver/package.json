@@ -40,7 +40,7 @@
     "did-resolver": ">=4.1.0"
   },
   "dependencies": {
-    "@noble/curves": "^1.9.7",
+    "@noble/curves": "2.4.0",
     "did-resolver": "^4.1.0"
   }
 }

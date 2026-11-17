@@ -32,8 +32,8 @@ import type {
 import { CID } from "multiformats/cid";
 import * as jsonCodec from "multiformats/codecs/json";
 import { sha256 as cidHasher } from "multiformats/hashes/sha2";
-import { secp256k1 } from "@noble/curves/secp256k1";
-import { sha256 } from "@noble/hashes/sha256";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 
 export interface CidResolverOptions {
   /** Archon Gatekeeper API base (e.g. `https://archon.technology/api/v1`). */
@@ -203,7 +203,10 @@ function verifySignature(
   delete copy.proof;
   const msgHash = sha256(new TextEncoder().encode(jcs(copy)));
   try {
-    return secp256k1.verify(signature, msgHash, compressedKey(jwk));
+    // msgHash is already the sha256 digest: verify it as-is (prehash: false).
+    return secp256k1.verify(signature, msgHash, compressedKey(jwk), {
+      prehash: false,
+    });
   } catch (cause) {
     if (cause instanceof ChainError) throw cause;
     return false;

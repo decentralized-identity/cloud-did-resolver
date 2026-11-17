@@ -32,8 +32,8 @@ import type {
   DIDResolutionResult,
   ResolverRegistry,
 } from "did-resolver";
-import { sha256 } from "@noble/hashes/sha256";
-import { blake2b } from "@noble/hashes/blake2b";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { blake2b } from "@noble/hashes/blake2.js";
 
 export interface TzResolverOptions {
   /**

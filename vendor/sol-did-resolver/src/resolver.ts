@@ -34,9 +34,9 @@ import type {
   Service,
   VerificationMethod as DidVerificationMethod,
 } from "did-resolver";
-import { ed25519 } from "@noble/curves/ed25519";
-import { sha256 } from "@noble/hashes/sha256";
-import { keccak_256 } from "@noble/hashes/sha3";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 
 export interface SolResolverOptions {
   /** Cluster → JSON-RPC URL. Clusters without a URL fail closed. */
@@ -138,7 +138,7 @@ function base58Encode(bytes: Uint8Array): string {
 
 function onEd25519Curve(bytes: Uint8Array): boolean {
   try {
-    ed25519.ExtendedPoint.fromHex(toHex(bytes));
+    ed25519.Point.fromBytes(bytes);
     return true;
   } catch {
     return false;

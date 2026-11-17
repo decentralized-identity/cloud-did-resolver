@@ -14,7 +14,6 @@ import {
   recordResolution,
   summaryTtl,
 } from "./analytics";
-import { canonicalDid } from "./canonical-did";
 import { didMethod, isDidOrDidUrl } from "./did-syntax";
 import { getHealth } from "./routing/health";
 import { providerTag, type Step } from "./resolvers/registry";
@@ -95,8 +94,9 @@ function track(
     const cf = (c.req.raw as Request & { cf?: IncomingRequestCfProperties }).cf;
     c.executionCtx.waitUntil(
       recordResolution(c.env, {
-        // Equivalent forms of one DID are one entity in analytics.
-        did: canonicalDid(did),
+        // Recorded exactly as requested: DIDs are case-sensitive (DID Core
+        // §3.1), did:algo included (owner, 2026-11-18).
+        did,
         method,
         route: m.route ?? null,
         provider: m.provider ?? null,

@@ -1,4 +1,4 @@
-import { ed25519 } from "@noble/curves/ed25519";
+import { ed25519 } from "@noble/curves/ed25519.js";
 const DEFAULT_MIRROR_URLS = {
     mainnet: "https://mainnet-public.mirrornode.hedera.com",
     testnet: "https://testnet.mirrornode.hedera.com",

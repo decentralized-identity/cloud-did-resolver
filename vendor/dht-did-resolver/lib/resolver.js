@@ -1,7 +1,7 @@
-import { ed25519, x25519 } from "@noble/curves/ed25519";
-import { secp256k1 } from "@noble/curves/secp256k1";
-import { p256 } from "@noble/curves/p256";
-import { sha256 } from "@noble/hashes/sha256";
+import { ed25519, x25519 } from "@noble/curves/ed25519.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { p256 } from "@noble/curves/nist.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 /** The canonical public Pkarr relay (resolution-verified 24 Aug 2026). */
 const DEFAULT_RELAY_URLS = ["https://relay.pkarr.org"];
 const DEFAULT_TIMEOUT_MS = 6000;

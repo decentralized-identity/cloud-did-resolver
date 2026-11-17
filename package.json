@@ -47,7 +47,7 @@
   "dependencies": {
     "@cef-ebsi/ebsi-did-resolver": "4.1.0",
     "@hono/swagger-ui": "0.6.1",
-    "@noble/curves": "1.9.7",
+    "@noble/curves": "2.4.0",
     "ethers": "6.17.0",
     "hono": "4.13.1"
   },

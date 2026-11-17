@@ -31,7 +31,7 @@ import type {
   DIDResolutionResult,
   ResolverRegistry,
 } from "did-resolver";
-import { keccak_256 } from "@noble/hashes/sha3";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 
 export interface Iden3Network {
   /** EVM JSON-RPC endpoint (e.g. an Alchemy URL). */

@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@atproto/identity": "link:../forks/atproto/packages/identity",
-    "@noble/curves": "1.9.7"
+    "@noble/curves": "2.4.0"
   },
   "devDependencies": {
     "did-resolver": "^4.1.0",

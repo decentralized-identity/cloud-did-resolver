@@ -34,7 +34,7 @@ import type {
   Service,
   VerificationMethod as DidVerificationMethod,
 } from "did-resolver";
-import { ed25519 } from "@noble/curves/ed25519";
+import { ed25519 } from "@noble/curves/ed25519.js";
 
 export interface HederaResolverOptions {
   /** Network → mirror-node base URL. Defaults to Hedera's public mirrors. */

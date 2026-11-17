@@ -1,4 +1,4 @@
-import { sha256 } from "@noble/hashes/sha256";
+import { sha256 } from "@noble/hashes/sha2.js";
 const DEFAULT_TIMEOUT_MS = 6000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 /** base64url of a 34-byte sha256 multihash is exactly 46 chars ("Ei…"). */

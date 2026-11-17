@@ -1,8 +1,8 @@
 import { CID } from "multiformats/cid";
 import * as jsonCodec from "multiformats/codecs/json";
 import { sha256 as cidHasher } from "multiformats/hashes/sha2";
-import { secp256k1 } from "@noble/curves/secp256k1";
-import { sha256 } from "@noble/hashes/sha256";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 const DEFAULT_GATEKEEPER_URL = "https://archon.technology/api/v1";
 const DEFAULT_TIMEOUT_MS = 6000;
 const DEFAULT_MAX_EVENTS = 1024;
@@ -102,7 +102,10 @@ function verifySignature(operation, jwk) {
     delete copy.proof;
     const msgHash = sha256(new TextEncoder().encode(jcs(copy)));
     try {
-        return secp256k1.verify(signature, msgHash, compressedKey(jwk));
+        // msgHash is already the sha256 digest: verify it as-is (prehash: false).
+        return secp256k1.verify(signature, msgHash, compressedKey(jwk), {
+            prehash: false,
+        });
     }
     catch (cause) {
         if (cause instanceof ChainError)

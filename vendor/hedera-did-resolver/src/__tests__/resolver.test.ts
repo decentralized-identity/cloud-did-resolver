@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ed25519 } from "@noble/curves/ed25519";
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { getResolver } from "../resolver.js";
 import { REFERENCE_DOCUMENT, TESTNET_DID, TOPIC_MESSAGES } from "./fixture.js";
 

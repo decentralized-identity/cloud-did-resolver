@@ -40,7 +40,7 @@
  * mismatch log.
  */
 import type { DIDDocument, DIDResolutionResult } from "did-resolver";
-import { secp256k1 } from "@noble/curves/secp256k1";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 
 export type VerificationStatus = "match" | "mismatch" | "unverified";
 
