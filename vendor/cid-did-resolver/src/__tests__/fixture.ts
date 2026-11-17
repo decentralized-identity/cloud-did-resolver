@@ -1,7 +1,10 @@
 /** Live-captured did:cid chain for archon.technology's node identity
  * (18 events, exported 2026-08-19) plus the Gatekeeper's own resolution
  * of it — the driver must independently verify the chain and reproduce
- * the same document and metadata. */
+ * the same document and metadata. The expected document includes
+ * `capabilityInvocation`, which the did:cid Method Specification and
+ * `@didcid/gatekeeper` >= 0.7.0 grant every generated agent document
+ * (2026-11-18); the 2026-08-19 capture (gatekeeper 0.6.x) predates it. */
 export const ARCHON_NODE_DID =
   "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq";
 
@@ -686,6 +689,7 @@ export const FIXTURE = {
       ],
       authentication: ["#key-1"],
       assertionMethod: ["#key-1"],
+      capabilityInvocation: ["#key-1"],
     },
     didDocumentMetadata: {
       created: "2026-01-27T20:53:49Z",

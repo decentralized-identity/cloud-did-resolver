@@ -15,6 +15,7 @@ import {
   summaryTtl,
 } from "./analytics";
 import { didMethod, isDidOrDidUrl } from "./did-syntax";
+import { checkOutbound } from "./outbound-health";
 import { getHealth } from "./routing/health";
 import { providerTag, type Step } from "./resolvers/registry";
 import { renderDashboard } from "./dashboard";
@@ -295,6 +296,16 @@ app.get("/methods", async (c) =>
 app.get("/health", (c) =>
   c.json({ status: "ok", service: c.env.RESOLVER_LABEL }),
 );
+// Outbound health from inside the zone (src/outbound-health.ts): fixed
+// canaries, never recorded in analytics, rate-limited like resolution.
+app.get("/health/outbound", async (c) => {
+  const blocked = await limited(c);
+  if (blocked) return blocked;
+  const report = await checkOutbound(c.env);
+  return c.json(report, report.ok ? 200 : 503, {
+    "cache-control": "no-store",
+  });
+});
 app.get("/openapi.json", (c) => c.json(openApiSpec(new URL(c.req.url).origin)));
 app.get("/docs", (c) =>
   c.html(

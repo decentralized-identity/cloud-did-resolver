@@ -20,6 +20,10 @@
     "GOPLAUSIBLE_RESOLVER": "https://goplausible.xyz/api/1.0/identifiers",
     "OYD_RESOLVER": "https://resolver.ownyourdata.eu/1.0/identifiers",
     "ENS_CANARY_DID": "did:ens:vitalik.eth",
+    // Checked through the public origin every round (GET /health/outbound), so
+    // settings of the thisdid.com zone are covered too: this cron Worker runs
+    // outside the zone and would not see them (the 2026-11 post-quantum 525s).
+    "PUBLIC_RESOLVER_URL": "https://thisdid.com",
     // Add ETHR_CANARY_DID only after the ethr driver has approved RPC configuration.
     // Add "ENS_CANARY_DID": "did:ens:vitalik.eth" here once the ens driver's
     // EVM_RPC_MAINNET_URL secret is configured and edge resolution is confirmed.

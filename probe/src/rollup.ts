@@ -30,7 +30,11 @@ export const dayStart = (ts: number): number => ts - (ts % DAY_MS);
 
 /** Health keys map to the provider tags used in the D1 event logs. */
 export function healthKeyProvider(healthKey: string): string {
-  if (healthKey.startsWith("local:")) return "ThisDID";
+  // zone:<method> is the check through thisdid.com (/health/outbound): a zone
+  // failure is ThisDID failing for its users.
+  if (healthKey.startsWith("local:") || healthKey.startsWith("zone:")) {
+    return "ThisDID";
+  }
   if (healthKey === "goplausible") return "GoPlausible";
   return healthKey; // godiddy | archon
 }

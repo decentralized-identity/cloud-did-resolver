@@ -49,12 +49,12 @@
     "@hono/swagger-ui": "0.6.1",
     "@noble/curves": "2.4.0",
     "ethers": "6.17.0",
-    "hono": "4.13.1"
+    "hono": "4.13.18"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260812.1",
     "@eslint/js": "10.0.1",
-    "axios": "1.19.0",
+    "axios": "1.21.1",
     "concurrently": "10.0.4",
     "eslint": "10.8.1",
     "eslint-config-prettier": "10.1.8",

@@ -129,6 +129,25 @@ export function openApiSpec(origin: string) {
           responses: { "200": { description: "Service is healthy." } },
         },
       },
+      "/health/outbound": {
+        get: {
+          tags: ["Discovery"],
+          operationId: "healthOutbound",
+          summary: "Outbound resolution health from the public origin",
+          description:
+            "Resolves two fixed canary DIDs whose routes reach resolvers outside Cloudflare (did:cid " +
+            "via Archon's Gatekeeper, did:plc via plc.directory) and reports pass or fail per canary " +
+            "with the per-step failures. No documents are returned and nothing is recorded in " +
+            "analytics. Results are reused for 60 seconds; rate-limited like resolution. The " +
+            "thisdid-probe sub-worker calls it every round, so `/status` covers this path as " +
+            "`zone:<method>`.",
+          responses: {
+            "200": { description: "Every canary resolved." },
+            "503": { description: "At least one canary failed." },
+            "429": { description: "Rate limit exceeded." },
+          },
+        },
+      },
       "/status": {
         get: {
           tags: ["Discovery"],

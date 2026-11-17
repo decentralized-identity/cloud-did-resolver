@@ -334,7 +334,7 @@ export function renderDashboard(): string {
 
   function providerStatus(d){
     var providers=(d&&d.providers)||{};
-    var local=Object.keys(providers).filter(function(k){return k.indexOf('local:')===0&&providers[k];}).map(function(k){return providers[k];});
+    var local=Object.keys(providers).filter(function(k){return (k.indexOf('local:')===0||k.indexOf('zone:')===0)&&providers[k];}).map(function(k){return providers[k];});
     function avg(rows,key){ var vals=rows.map(function(r){return r[key];}).filter(function(v){return v!=null;}); return vals.length?vals.reduce(function(a,v){return a+v;},0)/vals.length:null; }
     function aggregate(rows){
       if(!rows.length)return null;

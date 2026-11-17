@@ -124,7 +124,17 @@ function validRegistration(registration) {
 function standardDatetime(time) {
     return new Date(String(time)).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
-/** Initial document from the genesis operation (Gatekeeper `generateDoc`). */
+/**
+ * Initial document from the genesis operation (Gatekeeper `generateDoc`).
+ *
+ * An agent document grants `capabilityInvocation` with the same key, as the
+ * did:cid Method Specification defines it (archetech.com/didcid-specs,
+ * did-document.md: "Expresses permission to sign DID operations"; normative
+ * since 2026-10-05) and `@didcid/gatekeeper` >= 0.7.0 emits it (archon
+ * PR #1129). This applies only to generated documents: a `didDocument`
+ * supplied by an update replaces the component whole and is returned as
+ * written (protocol-rules.md), so nothing is added after replay.
+ */
 function generateDoc(did, anchor) {
     const registration = anchor.registration;
     if (registration.type === "agent") {
@@ -142,6 +152,7 @@ function generateDoc(did, anchor) {
                 ],
                 authentication: ["#key-1"],
                 assertionMethod: ["#key-1"],
+                capabilityInvocation: ["#key-1"],
             },
             didDocumentMetadata: { created: anchor.created },
             didDocumentData: {},

@@ -24,6 +24,7 @@ describe("healthKeyProvider", () => {
   it("maps health keys onto the analytics provider tags", () => {
     expect(healthKeyProvider("local:web")).toBe("ThisDID");
     expect(healthKeyProvider("local:xrpl")).toBe("ThisDID");
+    expect(healthKeyProvider("zone:cid")).toBe("ThisDID");
     expect(healthKeyProvider("goplausible")).toBe("GoPlausible");
     expect(healthKeyProvider("godiddy")).toBe("godiddy");
     expect(healthKeyProvider("archon")).toBe("archon");

@@ -31,6 +31,10 @@ import {
   type ProviderHealth,
   type ProviderStatus,
 } from "../../src/routing/health";
+import {
+  OUTBOUND_CANARIES,
+  type OutboundReport,
+} from "../../src/outbound-canaries";
 import { recordStatusTransitions, runRollups, type StatusMap } from "./rollup";
 
 interface ProbeEnv extends DriverBindings {
@@ -51,6 +55,13 @@ interface ProbeEnv extends DriverBindings {
   ETHR_CANARY_DID?: string;
   /** Optional stable ens DID; enable only after the ens driver RPC secret is configured. */
   ENS_CANARY_DID?: string;
+  /**
+   * Public resolver origin (https://thisdid.com). When set, each round also
+   * calls {origin}/health/outbound, which resolves canaries inside the zone's
+   * request context. Zone settings (origin TLS, rules) apply only there; this
+   * Worker runs outside the zone and cannot see them otherwise.
+   */
+  PUBLIC_RESOLVER_URL?: string;
   DB?: D1Database;
   STATS_KV?: KVNamespace;
 }
@@ -223,13 +234,81 @@ const EWMA_SUCCESS = 0.15;
 const BREAKER_FAILS = 3;
 const DEGRADED_MS = 4000;
 
+/**
+ * "zone" marks a check made through the public origin (GET /health/outbound),
+ * not a routing step. It is recorded under provider ThisDID, because a zone
+ * failure is ThisDID failing for its users, and routing never reads it.
+ */
+type ProbeStep = Step | "zone";
+
 interface ProbeResult {
-  step: Step;
+  step: ProbeStep;
   healthKey?: string;
   did: string;
   ok: boolean;
   ms: number;
   error: string | null;
+}
+
+/** Analytics provider tag for a probe row. */
+function probeProvider(step: ProbeStep): string {
+  return step === "zone" ? providerTag("local") : providerTag(step);
+}
+
+/** /health/outbound resolves every canary in parallel through full chains. */
+const ZONE_TIMEOUT_MS = 20_000;
+
+/**
+ * Check the resolver from inside the thisdid.com zone: fetch
+ * {PUBLIC_RESOLVER_URL}/health/outbound and record one result per canary
+ * under `zone:<method>`. Any transport failure fails every canary; a 429 is
+ * "up but throttled", as everywhere else in the probe.
+ */
+export async function probeZone(env: ProbeEnv): Promise<ProbeResult[]> {
+  if (!env.PUBLIC_RESOLVER_URL) return [];
+  const started = Date.now();
+  const result = (
+    did: string,
+    ok: boolean,
+    error: string | null,
+    ms = Date.now() - started,
+  ): ProbeResult => ({
+    step: "zone",
+    healthKey: `zone:${did.split(":")[1] ?? "unknown"}`,
+    did,
+    ok,
+    ms,
+    error,
+  });
+  const all = (ok: boolean, error: string) =>
+    OUTBOUND_CANARIES.map((did) => result(did, ok, error));
+  try {
+    const url = `${env.PUBLIC_RESOLVER_URL.replace(/\/+$/, "")}/health/outbound`;
+    const res = await Promise.race([
+      fetch(url, { headers: { accept: "application/json" } }),
+      new Promise<"timeout">((resolve) =>
+        setTimeout(() => resolve("timeout"), ZONE_TIMEOUT_MS),
+      ),
+    ]);
+    if (res === "timeout") return all(false, "timeout");
+    if (res.status === 429) return all(true, "rateLimited");
+    const report = (await res
+      .json()
+      .catch(() => null)) as OutboundReport | null;
+    if (!report || !Array.isArray(report.checks)) return all(false, "error");
+    return OUTBOUND_CANARIES.map((did) => {
+      const check = report.checks.find((c) => c.did === did);
+      if (!check) return result(did, false, "miss");
+      if (check.ok) return result(did, true, null, check.ms);
+      // e.g. "local:networkError,archon:525,godiddy:525"
+      const steps = (check.attempts ?? [])
+        .map((a) => `${a.step}:${a.status ?? a.error}`)
+        .join(",");
+      return result(did, false, steps || check.error || "miss", check.ms);
+    });
+  } catch {
+    return all(false, "error");
+  }
 }
 
 function upstreamBase(step: Step, env: ProbeEnv, did: string): string {
@@ -421,7 +500,11 @@ async function runRound(env: ProbeEnv): Promise<void> {
       ? [{ step: "local" as const, did: env.ENS_CANARY_DID }]
       : []),
   ];
-  const results = await Promise.all(canaries.map((c) => probeOne(c, env)));
+  const [direct, zone] = await Promise.all([
+    Promise.all(canaries.map((c) => probeOne(c, env))),
+    probeZone(env),
+  ]);
+  const results = [...direct, ...zone];
 
   // Snapshot first — it is what routing decisions will read. Status changes
   // are also journaled to D1 (`provider_status_events`): the snapshot is
@@ -460,7 +543,7 @@ async function runRound(env: ProbeEnv): Promise<void> {
         results.map((r) =>
           stmt.bind(
             now,
-            providerTag(r.step),
+            probeProvider(r.step),
             r.step,
             r.did,
             r.did.split(":")[1] ?? "",
