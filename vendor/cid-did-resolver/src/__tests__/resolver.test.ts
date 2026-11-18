@@ -1,114 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CID } from "multiformats/cid";
-import * as jsonCodec from "multiformats/codecs/json";
-import { sha256 as cidHasher } from "multiformats/hashes/sha2";
-import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { sha256 } from "@noble/hashes/sha2.js";
-import { getResolver } from "../resolver.js";
 import { ARCHON_NODE_DID, FIXTURE } from "./fixture.js";
+import {
+  agentDocument,
+  clone,
+  hyperswarm,
+  jwkFor,
+  key,
+  opCid,
+  resolve,
+  signLegacy,
+  stubExport,
+  type Op,
+} from "./helpers.js";
 
-const GATEKEEPER = "https://gatekeeper.test/api/v1";
-
-const resolve = (did: string) =>
-  getResolver({ gatekeeperUrl: GATEKEEPER }).cid(
-    did,
-    null as never,
-    null as never,
-    {},
-  );
-
-/** Mock the export endpoint: one chain per DID, DIF batching shape. */
-const stubExport = (chains: Record<string, unknown[]>) => {
-  const fetchMock = vi.fn(
-    async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe(`${GATEKEEPER}/dids/export`);
-      const { dids } = JSON.parse(String(init?.body)) as { dids: string[] };
-      return Response.json(dids.map((d) => chains[d] ?? []));
-    },
-  );
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
-};
-
-const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const liveEvents = () => clone(FIXTURE.events) as Record<string, unknown>[];
 
 afterEach(() => vi.unstubAllGlobals());
-
-// ── Synthetic chain builder (we hold the keys, so we can sign) ─────────────
-
-type Op = Record<string, unknown>;
-
-function jcs(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return "[" + value.map(jcs).join(",") + "]";
-  const record = value as Record<string, unknown>;
-  return (
-    "{" +
-    Object.keys(record)
-      .sort()
-      .map((k) => JSON.stringify(k) + ":" + jcs(record[k]))
-      .join(",") +
-    "}"
-  );
-}
-
-const b64u = (bytes: Uint8Array): string =>
-  Buffer.from(bytes).toString("base64url");
-
-async function opCid(op: Op): Promise<string> {
-  const digest = await cidHasher.digest(new TextEncoder().encode(jcs(op)));
-  return CID.createV1(jsonCodec.code, digest).toString();
-}
-
-function jwkFor(priv: Uint8Array): Record<string, string> {
-  const pub = secp256k1.getPublicKey(priv, false);
-  return {
-    crv: "secp256k1",
-    kty: "EC",
-    x: b64u(pub.slice(1, 33)),
-    y: b64u(pub.slice(33, 65)),
-  };
-}
-
-function signed(op: Op, priv: Uint8Array, verificationMethod: string): Op {
-  const msgHash = sha256(new TextEncoder().encode(jcs(op)));
-  return {
-    ...op,
-    proof: {
-      created: "2026-02-01T00:00:00.000Z",
-      proofPurpose: "authentication",
-      proofValue: b64u(secp256k1.sign(msgHash, priv, { prehash: false })),
-      type: "EcdsaSecp256k1Signature2019",
-      verificationMethod,
-    },
-  };
-}
-
-const event = (operation: Op, time: string) => ({
-  registry: "hyperswarm",
-  time,
-  operation,
-});
-
-const KEY_A = new Uint8Array(32).fill(7);
-const KEY_B = new Uint8Array(32).fill(9);
-
-async function agentGenesis(
-  priv: Uint8Array,
-): Promise<{ did: string; op: Op }> {
-  const op = signed(
-    {
-      created: "2026-02-01T00:00:00.000Z",
-      publicJwk: jwkFor(priv),
-      registration: { registry: "hyperswarm", type: "agent", version: 1 },
-      type: "create",
-    },
-    priv,
-    "#key-1",
-  );
-  return { did: `did:cid:${await opCid(op)}`, op };
-}
 
 // ── Live-chain regression ───────────────────────────────────────────────────
 
@@ -118,6 +25,19 @@ describe("did:cid resolution-only gatekeeper — live chain", () => {
     const result = await resolve(ARCHON_NODE_DID);
     expect(result.didResolutionMetadata.error).toBeUndefined();
     expect(result.didDocument).toEqual(FIXTURE.expected.didDocument);
+    expect(result.didDocumentMetadata).toEqual(
+      FIXTURE.expected.didDocumentMetadata,
+    );
+  });
+
+  // protocol-rules.md, Operation Authorization: Hyperswarm envelope times are
+  // normalized to the operation's proof.created. The 2026-08-19 export carried
+  // receipt times (2026-05-18T17:36:19Z); the result must not depend on them.
+  it("normalizes Hyperswarm receipt times to proof time", async () => {
+    const events = liveEvents();
+    for (const event of events) event.time = "2026-05-18T17:36:19.766Z";
+    stubExport({ [ARCHON_NODE_DID]: events });
+    const result = await resolve(ARCHON_NODE_DID);
     expect(result.didDocumentMetadata).toEqual(
       FIXTURE.expected.didDocumentMetadata,
     );
@@ -147,6 +67,7 @@ describe("did:cid resolution-only gatekeeper — live chain", () => {
     stubExport({ [ARCHON_NODE_DID]: events });
     const result = await resolve(ARCHON_NODE_DID);
     expect(result.didResolutionMetadata.error).toBe("invalidDidDocument");
+    expect(result.didResolutionMetadata.message).toContain("previd");
   });
 
   it("rejects a withheld genesis (chain starting mid-way)", async () => {
@@ -156,36 +77,46 @@ describe("did:cid resolution-only gatekeeper — live chain", () => {
   });
 });
 
-// ── Synthetic chains: rotation, deletion, assets ────────────────────────────
+// ── Synthetic chains: rotation, deletion, assets (legacy proofs) ────────────
+
+const KEY_A = key(7);
+const KEY_B = key(9);
+
+async function legacyAgent(
+  priv: Uint8Array,
+  created = "2026-02-01T00:00:00.000Z",
+): Promise<{ did: string; op: Op }> {
+  const op = signLegacy(
+    {
+      created,
+      publicJwk: jwkFor(priv),
+      registration: { registry: "hyperswarm", type: "agent", version: 1 },
+      type: "create",
+    },
+    priv,
+    "#key-1",
+    created,
+  );
+  return { did: `did:cid:${await opCid(op)}`, op };
+}
 
 describe("did:cid resolution-only gatekeeper — synthetic chains", () => {
   it("honors key rotation: later updates verify against the rotated key", async () => {
-    const { did, op: genesis } = await agentGenesis(KEY_A);
-    const rotatedDoc = {
-      "@context": ["https://www.w3.org/ns/did/v1"],
-      id: did,
-      verificationMethod: [
-        {
-          id: "#key-2",
-          controller: did,
-          type: "EcdsaSecp256k1VerificationKey2019",
-          publicKeyJwk: jwkFor(KEY_B),
-        },
-      ],
-      authentication: ["#key-2"],
-      assertionMethod: ["#key-2"],
-    };
-    const rotate = signed(
+    const { did, op: genesis } = await legacyAgent(KEY_A);
+    const rotate = signLegacy(
       {
         did,
-        doc: { didDocument: rotatedDoc },
+        doc: {
+          didDocument: agentDocument(did, [{ id: "#key-2", priv: KEY_B }]),
+        },
         previd: await opCid(genesis),
         type: "update",
       },
       KEY_A, // authorized by the then-current key
       `${did}#key-1`,
+      "2026-02-02T00:00:00.000Z",
     );
-    const afterRotate = signed(
+    const afterRotate = signLegacy(
       {
         did,
         doc: { didDocumentData: { note: "signed by the new key" } },
@@ -194,13 +125,10 @@ describe("did:cid resolution-only gatekeeper — synthetic chains", () => {
       },
       KEY_B, // must verify against the ROTATED key
       `${did}#key-2`,
+      "2026-02-03T00:00:00.000Z",
     );
     stubExport({
-      [did]: [
-        event(genesis, "2026-02-01T00:00:00.000Z"),
-        event(rotate, "2026-02-02T00:00:00.000Z"),
-        event(afterRotate, "2026-02-03T00:00:00.000Z"),
-      ],
+      [did]: [genesis, rotate, afterRotate].map(hyperswarm),
     });
     const result = await resolve(did);
     expect(result.didResolutionMetadata.error).toBeUndefined();
@@ -208,7 +136,7 @@ describe("did:cid resolution-only gatekeeper — synthetic chains", () => {
     expect(result.didDocumentMetadata.versionSequence).toBe("3");
 
     // The OLD key must no longer authorize updates.
-    const forged = signed(
+    const forged = signLegacy(
       {
         did,
         doc: { didDocumentData: { forged: true } },
@@ -217,43 +145,61 @@ describe("did:cid resolution-only gatekeeper — synthetic chains", () => {
       },
       KEY_A,
       `${did}#key-1`,
+      "2026-02-04T00:00:00.000Z",
     );
     stubExport({
-      [did]: [
-        event(genesis, "2026-02-01T00:00:00.000Z"),
-        event(rotate, "2026-02-02T00:00:00.000Z"),
-        event(afterRotate, "2026-02-03T00:00:00.000Z"),
-        event(forged, "2026-02-04T00:00:00.000Z"),
-      ],
+      [did]: [genesis, rotate, afterRotate, forged].map(hyperswarm),
     });
     const rejected = await resolve(did);
     expect(rejected.didResolutionMetadata.error).toBe("invalidDidDocument");
   });
 
   it("resolves a delete operation to a deactivated tombstone", async () => {
-    const { did, op: genesis } = await agentGenesis(KEY_A);
-    const remove = signed(
+    const { did, op: genesis } = await legacyAgent(KEY_A);
+    const remove = signLegacy(
       { did, previd: await opCid(genesis), type: "delete" },
       KEY_A,
       `${did}#key-1`,
+      "2026-02-05T12:00:00.000Z",
     );
-    stubExport({
-      [did]: [
-        event(genesis, "2026-02-01T00:00:00.000Z"),
-        event(remove, "2026-02-05T12:00:00.000Z"),
-      ],
-    });
+    stubExport({ [did]: [genesis, remove].map(hyperswarm) });
     const result = await resolve(did);
     expect(result.didResolutionMetadata.error).toBeUndefined();
     expect(result.didDocumentMetadata.deactivated).toBe(true);
     expect(result.didDocumentMetadata.deleted).toBe("2026-02-05T12:00:00Z");
+    expect(result.didDocumentMetadata.updated).toBeUndefined();
     expect(result.didDocument).toEqual({ id: did });
+  });
+
+  it("rejects an operation that extends a deletion", async () => {
+    const { did, op: genesis } = await legacyAgent(KEY_A);
+    const remove = signLegacy(
+      { did, previd: await opCid(genesis), type: "delete" },
+      KEY_A,
+      `${did}#key-1`,
+      "2026-02-05T00:00:00.000Z",
+    );
+    const revive = signLegacy(
+      {
+        did,
+        doc: { didDocumentData: { revived: true } },
+        previd: await opCid(remove),
+        type: "update",
+      },
+      KEY_A,
+      `${did}#key-1`,
+      "2026-02-06T00:00:00.000Z",
+    );
+    stubExport({ [did]: [genesis, remove, revive].map(hyperswarm) });
+    const result = await resolve(did);
+    expect(result.didResolutionMetadata.error).toBe("invalidDidDocument");
+    expect(result.didResolutionMetadata.message).toContain("deactivated");
   });
 
   it("resolves an asset DID by verifying against its controller's chain", async () => {
     const { did: controllerDid, op: controllerGenesis } =
-      await agentGenesis(KEY_A);
-    const assetOp = signed(
+      await legacyAgent(KEY_A);
+    const assetOp = signLegacy(
       {
         controller: controllerDid,
         created: "2026-02-02T00:00:00.000Z",
@@ -263,11 +209,12 @@ describe("did:cid resolution-only gatekeeper — synthetic chains", () => {
       },
       KEY_A,
       `${controllerDid}#key-1`,
+      "2026-02-02T00:00:00.000Z",
     );
     const assetDid = `did:cid:${await opCid(assetOp)}`;
     stubExport({
-      [controllerDid]: [event(controllerGenesis, "2026-02-01T00:00:00.000Z")],
-      [assetDid]: [event(assetOp, "2026-02-02T00:00:00.000Z")],
+      [controllerDid]: [hyperswarm(controllerGenesis)],
+      [assetDid]: [hyperswarm(assetOp)],
     });
     const result = await resolve(assetDid);
     expect(result.didResolutionMetadata.error).toBeUndefined();

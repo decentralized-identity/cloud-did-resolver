@@ -16,7 +16,8 @@
   },
   "files": [
     "lib",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "sideEffects": false,
   "license": "Apache-2.0",

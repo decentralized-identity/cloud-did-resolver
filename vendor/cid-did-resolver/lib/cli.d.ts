@@ -16,7 +16,7 @@
 import { type DIDResolutionOptions } from "did-resolver";
 import { type CidResolverOptions } from "./resolver.js";
 export declare const COMMAND = "thisdid-resolve-cid";
-export declare const USAGE = "Usage: thisdid-resolve-cid <did> [options]\n\nResolve a did:cid identifier with @thisdid/cid-did-resolver and print the DIF\nresolution result as JSON on stdout.\n\nOptions:\n  --version-id <id>      pass versionId to the resolver\n  --version-time <iso>   pass versionTime to the resolver\n  --compact              single-line JSON (default: pretty-printed)\n  -h, --help             show this help\n\nEnvironment:\n  CID_GATEKEEPER_URL   Archon Gatekeeper base URL (default: the public Archon\n                       deployment)\n  CID_TIMEOUT_MS       integer \u2014 per-request bound in ms\n  CID_MAX_EVENTS       integer \u2014 bound on the operation chain length\n\nExit status: 0 resolved, 1 resolution error, 2 usage or configuration error.\n";
+export declare const USAGE = "Usage: thisdid-resolve-cid <did> [options]\n\nResolve a did:cid identifier with @thisdid/cid-did-resolver and print the DIF\nresolution result as JSON on stdout.\n\nOptions:\n  --version-time <iso>    resolve the version current at that time\n  --version-sequence <n>  resolve version n (1 = the creation)\n  --version-id <id>       passed through but ignored: versionId is not a\n                          resolution selector for did:cid (resolution.md L20)\n  --compact               single-line JSON (default: pretty-printed)\n  -h, --help              show this help\n\nEnvironment:\n  CID_GATEKEEPER_URL   Archon Gatekeeper base URL (default: the public Archon\n                       deployment)\n  CID_TIMEOUT_MS       integer \u2014 per-request bound in ms (default 6000)\n  CID_MAX_EVENTS       integer \u2014 bound on the operation chain length\n                       (default 1024)\n  CID_DEADLINE_MS      integer \u2014 bound on one whole resolution in ms\n                       (default 7000); exceeding it is an internalError\n  CID_MAX_DIDS         integer \u2014 bound on distinct DID histories one\n                       resolution fetches (default 32); exceeding it is an\n                       internalError\n\nExit status: 0 resolved, 1 resolution error, 2 usage or configuration error.\n";
 export type CliEnv = Readonly<Record<string, string | undefined>>;
 export interface CliIo {
     stdout(text: string): void;
@@ -38,7 +38,10 @@ export declare function envInteger(env: CliEnv, name: string): number | undefine
 export declare function envUrl(env: CliEnv, name: string): string | undefined;
 /** Map the documented environment variables onto `getResolver()` options. */
 export declare function optionsFromEnv(env: CliEnv): CidResolverOptions;
-/** Parse `<did> [--version-id x] [--version-time t] [--compact] [--help]`. */
+/**
+ * Parse `<did> [--version-time t] [--version-sequence n] [--version-id x]
+ * [--compact] [--help]`.
+ */
 export declare function parseArgs(argv: readonly string[]): ParsedArgs;
 /** Run the CLI; returns the process exit status. Never throws. */
 export declare function main(argv: readonly string[], env: CliEnv, io: CliIo): Promise<number>;

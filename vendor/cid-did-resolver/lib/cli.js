@@ -22,16 +22,24 @@ Resolve a did:cid identifier with @thisdid/cid-did-resolver and print the DIF
 resolution result as JSON on stdout.
 
 Options:
-  --version-id <id>      pass versionId to the resolver
-  --version-time <iso>   pass versionTime to the resolver
-  --compact              single-line JSON (default: pretty-printed)
-  -h, --help             show this help
+  --version-time <iso>    resolve the version current at that time
+  --version-sequence <n>  resolve version n (1 = the creation)
+  --version-id <id>       passed through but ignored: versionId is not a
+                          resolution selector for did:cid (resolution.md L20)
+  --compact               single-line JSON (default: pretty-printed)
+  -h, --help              show this help
 
 Environment:
   CID_GATEKEEPER_URL   Archon Gatekeeper base URL (default: the public Archon
                        deployment)
-  CID_TIMEOUT_MS       integer — per-request bound in ms
+  CID_TIMEOUT_MS       integer — per-request bound in ms (default 6000)
   CID_MAX_EVENTS       integer — bound on the operation chain length
+                       (default 1024)
+  CID_DEADLINE_MS      integer — bound on one whole resolution in ms
+                       (default 7000); exceeding it is an internalError
+  CID_MAX_DIDS         integer — bound on distinct DID histories one
+                       resolution fetches (default 32); exceeding it is an
+                       internalError
 
 Exit status: 0 resolved, 1 resolution error, 2 usage or configuration error.
 `;
@@ -81,9 +89,18 @@ export function optionsFromEnv(env) {
     const timeoutMs = envInteger(env, "CID_TIMEOUT_MS");
     if (timeoutMs !== undefined)
         options.timeoutMs = timeoutMs;
+    const deadlineMs = envInteger(env, "CID_DEADLINE_MS");
+    if (deadlineMs !== undefined)
+        options.deadlineMs = deadlineMs;
+    const maxDids = envInteger(env, "CID_MAX_DIDS");
+    if (maxDids !== undefined)
+        options.maxDids = maxDids;
     return options;
 }
-/** Parse `<did> [--version-id x] [--version-time t] [--compact] [--help]`. */
+/**
+ * Parse `<did> [--version-time t] [--version-sequence n] [--version-id x]
+ * [--compact] [--help]`.
+ */
 export function parseArgs(argv) {
     const parsed = {
         resolutionOptions: {},
@@ -100,15 +117,20 @@ export function parseArgs(argv) {
             parsed.compact = true;
             continue;
         }
-        if (arg === "--version-id" || arg === "--version-time") {
+        if (arg === "--version-id" ||
+            arg === "--version-time" ||
+            arg === "--version-sequence") {
             const value = argv[i + 1];
             if (value === undefined || value.startsWith("-")) {
                 return { ...parsed, error: `${arg} requires a value` };
             }
             if (arg === "--version-id")
                 parsed.resolutionOptions.versionId = value;
-            else
+            else if (arg === "--version-time") {
                 parsed.resolutionOptions.versionTime = value;
+            }
+            else
+                parsed.resolutionOptions.versionSequence = value;
             i += 1;
             continue;
         }

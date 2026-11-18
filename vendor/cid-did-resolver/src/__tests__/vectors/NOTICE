@@ -1,0 +1,45 @@
+Test vectors for @thisdid/cid-did-resolver — provenance
+
+archon/  (copied byte-for-byte; MIT, see archon/LICENSE)
+  Source: https://github.com/archetech/archon, commit
+  9924993167db8ab3230224565cae62e31e1aacea (the gitHead of
+  @didcid/gatekeeper 0.8.0 in the npm registry), tests/gatekeeper/:
+    proof-vectors.json                      7da621d30052538d1ce40c77fdc773c70512e81046c1c0ab9e4b2cd33b781834
+    canonicalization-vectors.json           a53abc30e3ba01ed284da28a740cb0f87f7a7789d2531246c6ae9d4932f66301
+    numeric-predecessor-vectors.json        4c81b6e1bd46646439ad6bef7a7f5474b1b72417aec2f74e45425e748bae76bb
+    controller-rules-vectors.json           cda87ca9ffd0f84fad253c1a31f39fb0d990c3750dd7856a0115fdf47edafdae
+    history-recovery-vectors.json           02392997d255a44788a8601f7f50223976c71c16861f27b31b21cf351fceea6a
+    registration-transition-v1-vectors.json ef4522511bdb2d7ae6c3cbbaf62365ac44616d3d7a97931604652cf30a0a0b7d
+  (SHA-256 of each file.) All keys in them are synthetic test keys.
+
+spec-examples.json
+  The signed examples of the did:cid Method Specification,
+  https://github.com/archetech/didcid-specs commit
+  e8aace4d79542aed0ea58b4e252f260f176a70e3: the first two JSON blocks of
+  markdown/creation.md (agent, asset), the first of markdown/update.md
+  (rotation), the first two of markdown/revocation.md (deletion and the
+  post-revocation resolution result), extracted exactly as the specification's
+  own .github/scripts/check-examples.mjs extracts them (it validates them
+  against Gatekeeper). Synthetic keys (32 bytes of 0x4a, then 0x4b).
+  SHA-256 025241969528f47531a137b7672b2543727c42fb5381573d55e4edac50fcbe0b
+
+live/  (captured 2026-11-17T23:57Z from https://archon.technology, which
+reported version 0.14.1, commit 4fd5322 at GET /api/v1/version)
+  <prefix>-export.json      POST /api/v1/dids/export {"dids":[<did>]}
+  <prefix>-conformant.json  GET  /1.0/identifiers/<did>  (Archon's own
+                            confirmed, verified resolution)
+  bagaaieraone  did:cid:bagaaieraonezbppztcymmdgh4bbpvlbcucx5romy4albpkougbjev2fjyk7a
+                agent, 25 operations: 19 legacy, then 6
+                archon-ecdsa-secp256k1-jcs-2026 including rotations
+                #key-1 -> #key-2 -> #key-3; documents list a second
+                (X25519) method with an absolute id
+  bagaaierar7r  did:cid:bagaaierar7rd7vkb5aq4ie4wzdlfpcxthvsi6q4uspn6zopy5amthleslyza
+                agent, 8 operations: migrates hyperswarm -> BTC:mainnet
+                (confirmed on the old registry), then BTC:mainnet chain
+                receipts; the last operation uses the new suite
+  bagaaieraets  did:cid:bagaaieraetswm2ebzmtyxflryf6f3cuoazwisf3xsoccc6xreeb6cmwuazcq
+                asset, create + update, both new suite
+  bagaaierafgq  did:cid:bagaaierafgqcthafxj25bxteds6kka5f4citz3k46pyro5nxuyzaoyecjkcq
+                the agent that owns bagaaieraets
+  The legacy canary (did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq,
+  same capture) lives in ../fixture.ts, which the ThisDID root suite imports.

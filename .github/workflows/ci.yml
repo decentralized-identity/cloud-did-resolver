@@ -17,6 +17,13 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # pnpm must never switch to the version a project's packageManager (or a
+      # lockfile's packageManagerDependencies) names: that downloads and runs
+      # a pnpm no Socket check has seen. The flag on each call below does not
+      # reach pnpm calls nested in package scripts (the ethr fork's build runs
+      # `pnpm run …` and pins 12.4.1); this variable does.
+      pnpm_config_pm_on_fail: ignore
     steps:
       - uses: actions/checkout@v6
         with:

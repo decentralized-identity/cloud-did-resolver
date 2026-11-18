@@ -1,10 +1,17 @@
 /** Live-captured did:cid chain for archon.technology's node identity
- * (18 events, exported 2026-08-19) plus the Gatekeeper's own resolution
- * of it — the driver must independently verify the chain and reproduce
- * the same document and metadata. The expected document includes
- * `capabilityInvocation`, which the did:cid Method Specification and
- * `@didcid/gatekeeper` >= 0.7.0 grant every generated agent document
- * (2026-11-18); the 2026-08-19 capture (gatekeeper 0.6.x) predates it. */
+ * (18 events, all `EcdsaSecp256k1Signature2019` legacy proofs), exported
+ * from https://archon.technology/api/v1/dids/export on 2026-11-17T23:57Z
+ * (Archon 0.14.1, commit 4fd5322), together with Archon's own conformant
+ * resolution of it (GET https://archon.technology/1.0/identifiers/<did>,
+ * same time). The driver must independently verify the chain and reproduce
+ * that document and metadata.
+ *
+ * Re-captured 2026-11-17 because Archon now exports Hyperswarm event `time`
+ * as the operation's `proof.created` (archon #1186; protocol-rules.md,
+ * Operation Authorization): the 2026-08-19 capture carried receipt times
+ * (2026-05-18), which moved `updated`. The operations and their CIDs are
+ * unchanged. `confirmed` is not DID Core document metadata and is not
+ * returned (resolution.md, Resolution Result). */
 export const ARCHON_NODE_DID =
   "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq";
 
@@ -12,7 +19,7 @@ export const FIXTURE = {
   events: [
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.734Z",
+      time: "2026-01-27T20:53:49.675Z",
       ordinal: [1779125779734, 14],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
@@ -32,17 +39,13 @@ export const FIXTURE = {
           x: "TrYXD_NHqE9MYwEbkF_1qPqMPlosPGbqvjIyCQHXS0U",
           y: "Abh_no1Mo8avg8p0psNi6BRjkRkRcfECw5Geu8s73YA",
         },
-        registration: {
-          version: 1,
-          type: "agent",
-          registry: "hyperswarm",
-        },
+        registration: { version: 1, type: "agent", registry: "hyperswarm" },
         type: "create",
       },
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.734Z",
+      time: "2026-01-27T20:53:51.916Z",
       ordinal: [1779125779734, 15],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaierazptze77mzsrrjvjscmfdjxp35374avietdzem6v252pq4g6o4swa",
@@ -79,7 +82,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.734Z",
+      time: "2026-01-28T15:26:29.575Z",
       ordinal: [1779125779734, 16],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaierautf6hnkluwtxdz3q3vb53mlmcpe3w7aoaowjevgxytt4c5phiura",
@@ -116,7 +119,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.734Z",
+      time: "2026-01-28T16:56:21.253Z",
       ordinal: [1779125779734, 18],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaierajaxgnjng72opyx7flp3emtn2vw4zsowsrexyoy5du5tg7p3vo7ja",
@@ -148,7 +151,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.734Z",
+      time: "2026-01-28T20:55:00.429Z",
       ordinal: [1779125779734, 25],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaierasj7qfck4b2ve2igamccdcy53bixzqs2uwyvsxxygpm3zfdb7wina",
@@ -180,7 +183,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.734Z",
+      time: "2026-01-28T20:56:09.929Z",
       ordinal: [1779125779734, 26],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaieragy3f6m4jqzrth7cegdlvg55yhygnqssaidlc7bc6qpdhxvq6snda",
@@ -212,7 +215,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.734Z",
+      time: "2026-01-28T21:07:40.213Z",
       ordinal: [1779125779734, 27],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaieralollpkkhqhm3k2syozfl4riadvklvwlwq3b7hbrsn36u4qqt2anq",
@@ -244,7 +247,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.734Z",
+      time: "2026-01-30T19:39:47.911Z",
       ordinal: [1779125779734, 30],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaierahctk6lkflwixus3ilu5tmvjbez6k6x3yszgjxizdhj7jl3u6444a",
@@ -276,7 +279,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.734Z",
+      time: "2026-02-03T02:52:02.739Z",
       ordinal: [1779125779734, 46],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaierakix5mua3lnkdrbslsj7cwstj3ty66l6fjpdkkt72tedh3ong4pna",
@@ -313,7 +316,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.750Z",
+      time: "2026-02-06T18:11:36.456Z",
       ordinal: [1779125779750, 48],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaieramnzrsjeldhl4mkiwuaibsclzf7vpreuyi63q5ay3cy65daduc3oa",
@@ -350,7 +353,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.750Z",
+      time: "2026-02-06T18:14:04.573Z",
       ordinal: [1779125779750, 49],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaieradev2igajn2yg55ss3glejezweqxkheaa27uzitmhvkk5xalxkeia",
@@ -387,7 +390,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.750Z",
+      time: "2026-02-17T18:28:42.734Z",
       ordinal: [1779125779750, 91],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaierattvpsuj2d3doqiu2edeytyyjislfathny2hid5eb7brh2ov4a23a",
@@ -425,7 +428,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.766Z",
+      time: "2026-02-20T20:26:56.986Z",
       ordinal: [1779125779766, 1],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaierabgmhk72u7nh7rdwiwcelveo6wqbmwdol4ytfp4szey2kgiq2zujq",
@@ -466,7 +469,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.766Z",
+      time: "2026-02-21T05:42:01.797Z",
       ordinal: [1779125779766, 27],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaiera74vwsf5ezpxapsdds6ceoqunu77sw2o4kka3wpxtzniiy272junq",
@@ -504,7 +507,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.766Z",
+      time: "2026-02-24T16:42:29.408Z",
       ordinal: [1779125779766, 57],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaieraorq6pb2pzqwm7m6qfoh47e2wgtjgw6czhgtiqikqv5otimahom6q",
@@ -544,7 +547,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.766Z",
+      time: "2026-02-24T16:45:32.819Z",
       ordinal: [1779125779766, 58],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaiera7g3vadeej62xikusw6efzmvv2dakblihsiqab52zedzoe564z7ea",
@@ -584,7 +587,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.766Z",
+      time: "2026-02-24T16:46:49.934Z",
       ordinal: [1779125779766, 59],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaieraew2athgp63fezjutnuyjpjwaizu5znrpinmm6le5oavz6fwhxkoq",
@@ -625,7 +628,7 @@ export const FIXTURE = {
     },
     {
       registry: "hyperswarm",
-      time: "2026-05-18T17:36:19.766Z",
+      time: "2026-02-27T21:40:49.440Z",
       ordinal: [1779125779766, 71],
       did: "did:cid:bagaaieraoqzjgi6537vyu3h3rtetki5g4bk6stzyqplcmwpqgqxp7fewowcq",
       opid: "bagaaieraaq75psozcfsftb5tnsvpgvvfmpxxhvh2bjdjfxwph6uk2pnaoodq",
@@ -693,11 +696,10 @@ export const FIXTURE = {
     },
     didDocumentMetadata: {
       created: "2026-01-27T20:53:49Z",
-      updated: "2026-05-18T17:36:19Z",
+      updated: "2026-02-27T21:40:49Z",
       versionId:
         "bagaaieraaq75psozcfsftb5tnsvpgvvfmpxxhvh2bjdjfxwph6uk2pnaoodq",
       versionSequence: "18",
-      confirmed: true,
     },
   },
 } as const;

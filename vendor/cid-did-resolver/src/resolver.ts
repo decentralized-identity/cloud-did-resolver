@@ -2,38 +2,73 @@
  * did:cid resolver for the DIF `did-resolver` interface.
  *
  * A RESOLUTION-ONLY Archon Gatekeeper: instead of proxying a Gatekeeper's
- * answer, this driver fetches the DID's complete signed operation chain
+ * answer, this driver fetches the DID's accepted operation history
  * (`POST {gatekeeper}/dids/export`) and re-derives the document itself,
- * verifying every link of the method's trust chain in-process:
+ * verifying every operation in-process before it is applied:
  *
- *  - the DID suffix must equal the CIDv1 (json codec, sha256, base32) of the
- *    JCS-canonicalized genesis operation — content-addressed identity;
- *  - the genesis operation must be self-signed by its `publicJwk` (agent) or
- *    signed by the controller's then-current key (asset, resolved
- *    recursively with a depth bound);
- *  - every update/delete must be signed by the *then-current* first
- *    verification-method key (key rotation honored) and hash-linked to the
- *    previous operation (`previd` = recomputed CID of the prior operation);
- *  - deactivation is terminal.
+ *  - the DID suffix must equal the CIDv1 (JSON codec, SHA-256, base32) of the
+ *    JCS-canonicalized genesis operation, and every envelope must target the
+ *    DID;
+ *  - every operation proof must be a well-formed `EcdsaSecp256k1Signature2019`
+ *    or `DataIntegrityProof` / `archon-ecdsa-secp256k1-jcs-2026` proof, whose
+ *    signature verifies under the key its `verificationMethod` names;
+ *  - an agent operation is authorized by the predecessor document; an asset
+ *    operation by its owner agent, selected at the operation's chain position
+ *    when the receipt and the owner's history are chain-anchored, otherwise at
+ *    `proof.created`;
+ *  - every update/delete links to its predecessor (`previd`), satisfies the
+ *    state-transition rules (controllers, registration replacement, unique
+ *    method ids) and never extends a deletion.
  *
- * Only event DISCOVERY is delegated to the Gatekeeper: a lying Gatekeeper
- * can withhold the tail of a chain (staleness) but cannot forge, alter, or
- * reorder state without breaking a signature or a CID link. Verification
- * semantics are ported from `@didcid/gatekeeper` (MIT) `resolveDID` with
- * `verify: true`; the blockchain `timestamp` enrichment is omitted (it
- * requires a registry block database, which is a node concern, not a
- * resolution concern).
+ * Specification: the did:cid Method Specification, archetech/didcid-specs
+ * e8aace4d79542aed0ea58b4e252f260f176a70e3 (normative since 2026-10-05).
+ * Reference: `@didcid/gatekeeper` 0.8.0 (MIT), archon commit
+ * 9924993167db8ab3230224565cae62e31e1aacea — this file ports `resolveDIDAt`
+ * with `confirm: true, verify: true` (the conformant `/1.0/identifiers`
+ * surface, services/gatekeeper/server/src/identifiers-router.ts), with
+ * `authorizeOperation`, `authorizeCreateOperation`, `controllerForEvent`,
+ * `isAnchored`, `isSelfControlledAgent` and `validatePredecessor`.
+ * REFERENCE-MAP.md maps each function and check to both, and lists where
+ * this port follows the specification instead of the code.
+ *
+ * Only discovery is delegated to the Gatekeeper: the export is the
+ * Gatekeeper's accepted history, and its receipts (registry, time, ordinal)
+ * are taken as that Gatekeeper reports them. A lying Gatekeeper can withhold
+ * the tail of a chain or misreport receipts, but cannot forge, alter or
+ * reorder signed state without failing a signature or a CID link; any
+ * operation in the export that does not verify fails the resolution (fail
+ * closed). The blockchain `timestamp` enrichment is omitted (it requires a
+ * registry block database).
  */
-import type {
-  DIDDocument,
-  DIDResolutionResult,
-  ResolverRegistry,
-} from "did-resolver";
+import type { DIDResolutionResult, ResolverRegistry } from "did-resolver";
 import { CID } from "multiformats/cid";
-import * as jsonCodec from "multiformats/codecs/json";
-import { sha256 as cidHasher } from "multiformats/hashes/sha2";
-import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { sha256 } from "@noble/hashes/sha2.js";
+import {
+  OperationError,
+  applyComponents,
+  compareOrdinals,
+  eventTarget,
+  generateCID,
+  generateDoc,
+  hasAnchoredPrefix,
+  hasChainMetadata,
+  historyEntries,
+  isUnanchoredRegistry,
+  legacyNumericCid,
+  normalizeEventTime,
+  standardDatetime,
+  timestampMillis,
+  validRegistration,
+  verifyCreateOperation,
+  verifyEventShape,
+  verifyProofFormat,
+  verifyUpdateOperation,
+  absoluteKeyId,
+  type DidCidDocument,
+  type DidDocument,
+  type DocumentMetadata,
+  type GatekeeperEvent,
+  type Operation,
+} from "./operations.js";
 
 export interface CidResolverOptions {
   /** Archon Gatekeeper API base (e.g. `https://archon.technology/api/v1`). */
@@ -42,72 +77,32 @@ export interface CidResolverOptions {
   timeoutMs?: number;
   /** Upper bound on events accepted per DID chain. Default 1024. */
   maxEvents?: number;
+  /**
+   * Wall-clock bound for one whole resolution, every Gatekeeper request and
+   * all verification included. Default 7000 ms (below the ThisDID gateway's
+   * 8 s step timeout). Exceeding it fails with `internalError`.
+   */
+  deadlineMs?: number;
+  /**
+   * Upper bound on distinct DID histories one resolution may fetch (the DID
+   * plus the owners and transferees its operations name). Default 32, within
+   * a Worker's subrequest budget. Exceeding it fails with `internalError`.
+   */
+  maxDids?: number;
 }
 
 const DEFAULT_GATEKEEPER_URL = "https://archon.technology/api/v1";
 const DEFAULT_TIMEOUT_MS = 6000;
 const DEFAULT_MAX_EVENTS = 1024;
+const DEFAULT_DEADLINE_MS = 7000;
+const DEFAULT_MAX_DIDS = 32;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-/** Bound on one operation's serialized size (mirrors Gatekeeper maxOpBytes). */
-const MAX_OP_CHARS = 256 * 1024;
 /** DID suffix is a base32 CIDv1 — bound before parsing. */
 const MAX_SUFFIX_CHARS = 128;
-/** Asset controllers are DIDs too; bound the resolution recursion. */
+/** Owners are agents, which authorize themselves; bound recursion anyway. */
 const MAX_CONTROLLER_DEPTH = 3;
 
-const VALID_REGISTRATION_VERSIONS = new Set([1]);
-const VALID_REGISTRATION_TYPES = new Set(["agent", "asset"]);
-
-interface Proof {
-  created?: string;
-  proofPurpose?: string;
-  proofValue?: string;
-  type?: string;
-  verificationMethod?: string;
-}
-
-interface Registration {
-  registry?: string;
-  type?: string;
-  version?: number;
-  prefix?: string;
-  validUntil?: string;
-}
-
-interface Operation {
-  type?: string;
-  created?: string;
-  did?: string;
-  publicJwk?: Record<string, unknown>;
-  registration?: Registration;
-  controller?: string;
-  data?: unknown;
-  doc?: {
-    didDocument?: DIDDocument;
-    didDocumentData?: unknown;
-    didDocumentRegistration?: Registration;
-  };
-  previd?: string;
-  proof?: Proof;
-}
-
-interface GatekeeperEvent {
-  registry?: string;
-  time?: string;
-  did?: string;
-  opid?: string;
-  operation?: Operation;
-}
-
-/** Internal document state while folding the chain (Gatekeeper's shape). */
-interface DocState {
-  didDocument: DIDDocument;
-  didDocumentMetadata: Record<string, unknown>;
-  didDocumentData?: unknown;
-  didDocumentRegistration?: Registration;
-}
-
-/** A verification failure — resolution error, never an exception upward. */
+/** A resolution failure — reported as a result, never thrown upward. */
 class ChainError extends Error {
   constructor(
     public readonly code: string,
@@ -125,169 +120,70 @@ function errorResult(error: string, message?: string): DIDResolutionResult {
   };
 }
 
-/**
- * RFC 8785 (JCS) canonical JSON. Sufficient and exact for Gatekeeper
- * operations: values originate from JSON.parse, so number serialization via
- * JSON.stringify matches JCS's ECMAScript ToString requirement, and
- * JSON.stringify's string escaping is the JCS escaping.
- */
-function jcs(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return "[" + value.map(jcs).join(",") + "]";
-  const record = value as Record<string, unknown>;
-  return (
-    "{" +
-    Object.keys(record)
-      .sort()
-      .filter((k) => record[k] !== undefined)
-      .map((k) => JSON.stringify(k) + ":" + jcs(record[k]))
-      .join(",") +
-    "}"
-  );
+/** The resolveDIDAt options this port uses (verify is always on). */
+interface ResolveAtOptions {
+  versionTime?: string;
+  versionSequence?: number;
+  /** Chain-position cutoff — internal, for asset authorization only. */
+  versionOrdinal?: { registry: unknown; ordinal: number[] };
+  confirm: boolean;
 }
 
-function base64urlDecode(encoded: string): Uint8Array | undefined {
-  if (!/^[A-Za-z0-9_-]+$/.test(encoded)) return undefined;
+/** One DID's validated export: normalized events and their operation ids. */
+interface Chain {
+  did: string;
+  events: GatekeeperEvent[];
+  versionIds: string[];
+  /** Content-derived TypeScript numeric-key id, where it differs. */
+  legacyIds: (string | undefined)[];
+  /** `timestampMillis` of each normalized event time. */
+  times: number[];
+  /** `historyEntries` confirmation of each event. */
+  confirmed: boolean[];
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+function validDidSyntax(did: unknown): did is string {
+  if (typeof did !== "string") return false;
+  const segments = did.split(":");
+  if (
+    segments.length !== 3 ||
+    segments[0] !== "did" ||
+    segments[1] !== "cid" ||
+    segments[2].length === 0 ||
+    segments[2].length > MAX_SUFFIX_CHARS
+  ) {
+    return false;
+  }
   try {
-    const base64 =
-      encoded.replace(/-/g, "+").replace(/_/g, "/") +
-      "=".repeat((4 - (encoded.length % 4)) % 4);
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes;
+    CID.parse(segments[2]);
+    return true;
   } catch {
-    return undefined;
-  }
-}
-
-/** CIDv1 (json codec, sha256, base32) of an operation — Gatekeeper opid/versionId. */
-async function operationCid(operation: Operation): Promise<string> {
-  const canonical = jcs(operation);
-  if (canonical.length > MAX_OP_CHARS) {
-    throw new ChainError("invalidDidDocument", "operation exceeds size bound");
-  }
-  const digest = await cidHasher.digest(new TextEncoder().encode(canonical));
-  return CID.createV1(jsonCodec.code, digest).toString();
-}
-
-/** Compressed secp256k1 point from a JWK's x/y members. */
-function compressedKey(jwk: Record<string, unknown>): Uint8Array {
-  if (jwk.kty !== "EC" || jwk.crv !== "secp256k1") {
-    throw new ChainError(
-      "invalidDidDocument",
-      "verification key is not a secp256k1 key",
-    );
-  }
-  const x = typeof jwk.x === "string" ? base64urlDecode(jwk.x) : undefined;
-  const y = typeof jwk.y === "string" ? base64urlDecode(jwk.y) : undefined;
-  if (x?.length !== 32 || y?.length !== 32) {
-    throw new ChainError("invalidDidDocument", "malformed key coordinates");
-  }
-  const point = new Uint8Array(33);
-  point[0] = (y[31] & 1) === 0 ? 0x02 : 0x03;
-  point.set(x, 1);
-  return point;
-}
-
-/** Verify an operation's proof: sha256(JCS(op − proof)) signed compact secp256k1. */
-function verifySignature(
-  operation: Operation,
-  jwk: Record<string, unknown>,
-): boolean {
-  const proofValue = operation.proof?.proofValue;
-  if (typeof proofValue !== "string") return false;
-  const signature = base64urlDecode(proofValue);
-  if (signature?.length !== 64) return false;
-  const copy: Operation = { ...operation };
-  delete copy.proof;
-  const msgHash = sha256(new TextEncoder().encode(jcs(copy)));
-  try {
-    // msgHash is already the sha256 digest: verify it as-is (prehash: false).
-    return secp256k1.verify(signature, msgHash, compressedKey(jwk), {
-      prehash: false,
-    });
-  } catch (cause) {
-    if (cause instanceof ChainError) throw cause;
     return false;
   }
 }
 
-function validRegistration(registration: Registration | undefined): boolean {
-  return Boolean(
-    registration &&
-    VALID_REGISTRATION_VERSIONS.has(registration.version as number) &&
-    VALID_REGISTRATION_TYPES.has(registration.type as string) &&
-    typeof registration.registry === "string" &&
-    registration.registry.length > 0,
-  );
-}
-
-/** Gatekeeper's timestamp normalization (second precision, Z suffix). */
-function standardDatetime(time: unknown): string {
-  return new Date(String(time)).toISOString().replace(/\.\d{3}Z$/, "Z");
-}
-
 /**
- * Initial document from the genesis operation (Gatekeeper `generateDoc`).
- *
- * An agent document grants `capabilityInvocation` with the same key, as the
- * did:cid Method Specification defines it (archetech.com/didcid-specs,
- * did-document.md: "Expresses permission to sign DID operations"; normative
- * since 2026-10-05) and `@didcid/gatekeeper` >= 0.7.0 emits it (archon
- * PR #1129). This applies only to generated documents: a `didDocument`
- * supplied by an update replaces the component whole and is returned as
- * written (protocol-rules.md), so nothing is added after replay.
+ * The conformant surface's `normalizeDidDocumentMetadata`: DID Core metadata
+ * only — `confirmed` and `timestamp` are registration provenance, not
+ * document metadata (resolution.md, Resolution Result).
  */
-function generateDoc(did: string, anchor: Operation): DocState {
-  const registration = anchor.registration as Registration;
-  if (registration.type === "agent") {
-    return {
-      didDocument: {
-        "@context": ["https://www.w3.org/ns/did/v1"],
-        id: did,
-        verificationMethod: [
-          {
-            id: "#key-1",
-            controller: did,
-            type: "EcdsaSecp256k1VerificationKey2019",
-            publicKeyJwk:
-              anchor.publicJwk as unknown as DIDDocument["verificationMethod"],
-          } as unknown as NonNullable<DIDDocument["verificationMethod"]>[0],
-        ],
-        authentication: ["#key-1"],
-        assertionMethod: ["#key-1"],
-        capabilityInvocation: ["#key-1"],
-      },
-      didDocumentMetadata: { created: anchor.created },
-      didDocumentData: {},
-      didDocumentRegistration: registration,
-    };
+function conformantMetadata(metadata: DocumentMetadata): DocumentMetadata {
+  const standard: DocumentMetadata = {};
+  if (metadata.deactivated) standard.deactivated = true;
+  if (metadata.created !== undefined) standard.created = metadata.created;
+  if (metadata.updated !== undefined) standard.updated = metadata.updated;
+  if (metadata.deleted !== undefined) standard.deleted = metadata.deleted;
+  if (metadata.canonicalId !== undefined) {
+    standard.canonicalId = metadata.canonicalId;
   }
-  // asset
-  return {
-    didDocument: {
-      "@context": ["https://www.w3.org/ns/did/v1"],
-      id: did,
-      controller: anchor.controller,
-    },
-    didDocumentMetadata: { created: anchor.created },
-    didDocumentData: anchor.data,
-    didDocumentRegistration: registration,
-  };
-}
-
-/** First verification-method key of a document — the update-authorizing key. */
-function firstKey(doc: DIDDocument): Record<string, unknown> {
-  const vm = doc.verificationMethod?.[0] as
-    { publicKeyJwk?: Record<string, unknown> } | undefined;
-  if (!vm?.publicKeyJwk) {
-    throw new ChainError(
-      "invalidDidDocument",
-      "document has no verification key to authorize updates",
-    );
+  if (metadata.versionId !== undefined) standard.versionId = metadata.versionId;
+  if (metadata.versionSequence !== undefined) {
+    standard.versionSequence = metadata.versionSequence;
   }
-  return vm.publicKeyJwk;
+  return standard;
 }
 
 export function getResolver(options?: CidResolverOptions): ResolverRegistry {
@@ -297,6 +193,8 @@ export function getResolver(options?: CidResolverOptions): ResolverRegistry {
   );
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxEvents = options?.maxEvents ?? DEFAULT_MAX_EVENTS;
+  const deadlineMs = options?.deadlineMs ?? DEFAULT_DEADLINE_MS;
+  const maxDids = options?.maxDids ?? DEFAULT_MAX_DIDS;
 
   async function readBounded(response: Response): Promise<string | null> {
     if (
@@ -331,24 +229,48 @@ export function getResolver(options?: CidResolverOptions): ResolverRegistry {
     return new TextDecoder().decode(bytes);
   }
 
-  /** Fetch a DID's full event chain from the Gatekeeper. */
-  async function fetchEvents(did: string): Promise<GatekeeperEvent[] | null> {
-    const response = await fetch(`${base}/dids/export`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify({ dids: [did] }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!response.ok) {
-      throw new ChainError(
-        "networkError",
-        `gatekeeper HTTP ${response.status}`,
-      );
+  /**
+   * Fetch a DID's accepted history from the Gatekeeper, bounded by the
+   * per-request timeout and by what is left of the resolution's deadline.
+   */
+  async function fetchEvents(
+    did: string,
+    session: Session,
+  ): Promise<GatekeeperEvent[] | null> {
+    session.checkDeadline();
+    const remaining = session.deadline - Date.now();
+    const deadlineBound = remaining <= timeoutMs;
+    let response: Response;
+    let text: string | null;
+    try {
+      response = await fetch(`${base}/dids/export`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({ dids: [did] }),
+        signal: AbortSignal.timeout(
+          Math.max(1, Math.min(timeoutMs, remaining)),
+        ),
+      });
+      if (!response.ok) {
+        throw new ChainError(
+          "networkError",
+          `gatekeeper HTTP ${response.status}`,
+        );
+      }
+      text = await readBounded(response);
+    } catch (cause) {
+      if (
+        deadlineBound &&
+        !(cause instanceof ChainError) &&
+        Date.now() >= session.deadline - 1
+      ) {
+        throw session.deadlineError();
+      }
+      throw cause;
     }
-    const text = await readBounded(response);
     if (text === null) {
       throw new ChainError("networkError", "response exceeds size bound");
     }
@@ -362,223 +284,550 @@ export function getResolver(options?: CidResolverOptions): ResolverRegistry {
   }
 
   /**
-   * Verify and fold a DID's event chain into its document state.
-   * `versionTime` bounds updates for controller-at-time resolution;
-   * `confirm` stops at the first registry-unconfirmed event (both mirror
-   * Gatekeeper `resolveDID` options).
+   * Validate one export before any of it is used: every envelope well-formed
+   * (`verifyEvent`), its time normalized (`normalizeEventTime`), its target
+   * the DID (`eventTarget`), the genesis first and only there. Operation ids
+   * are recomputed from content (`normalizeEvent`); the envelope `opid` is
+   * never trusted.
    */
-  async function foldChain(
+  async function loadChain(
     did: string,
-    events: GatekeeperEvent[],
-    opts: { versionTime?: string; confirm?: boolean; depth: number },
-  ): Promise<DocState> {
-    const suffix = did.split(":")[2];
-    const anchor = events[0]?.operation;
-    if (!anchor || anchor.type !== "create") {
-      throw new ChainError(
-        "invalidDidDocument",
-        "chain does not start with create",
-      );
-    }
-    if (!validRegistration(anchor.registration)) {
-      throw new ChainError(
-        "invalidDidDocument",
-        "invalid genesis registration",
-      );
-    }
-
-    // Content-addressed identity: the DID IS the CID of its genesis operation.
-    const genesisCid = await operationCid(anchor);
-    if (genesisCid !== suffix) {
-      throw new ChainError(
-        "invalidDidDocument",
-        "DID does not match the CID of its genesis operation",
-      );
-    }
-
-    // Genesis signature.
-    if (anchor.registration!.type === "agent") {
-      if (anchor.proof?.verificationMethod !== "#key-1" || !anchor.publicJwk) {
-        throw new ChainError("invalidDidDocument", "malformed agent genesis");
+    session: Session,
+  ): Promise<Chain | null> {
+    const fetched = await fetchEvents(did, session);
+    if (!fetched) return null;
+    const events = JSON.parse(JSON.stringify(fetched)) as GatekeeperEvent[];
+    const versionIds: string[] = [];
+    const legacyIds: (string | undefined)[] = [];
+    for (const [index, event] of events.entries()) {
+      if (!isRecord(event) || !verifyEventShape(event)) {
+        throw new ChainError("invalidDidDocument", `malformed event ${index}`);
       }
-      if (!verifySignature(anchor, anchor.publicJwk)) {
-        throw new ChainError("invalidDidDocument", "genesis signature invalid");
-      }
-    } else {
-      const controllerDid = String(
-        anchor.proof?.verificationMethod ?? "",
-      ).split("#")[0];
-      if (!controllerDid || anchor.controller !== controllerDid) {
+      normalizeEventTime(event);
+      const operation = event.operation as Operation;
+      if (index === 0 && operation.type !== "create") {
         throw new ChainError(
           "invalidDidDocument",
-          "asset signer is not controller",
+          "chain does not start with create",
         );
       }
-      const controller = await resolveState(controllerDid, {
-        versionTime: anchor.proof?.created,
-        confirm: true,
-        depth: opts.depth + 1,
-      });
-      if (!verifySignature(anchor, firstKey(controller.didDocument))) {
-        throw new ChainError(
-          "invalidDidDocument",
-          "asset genesis signature invalid",
-        );
+      if (index > 0 && operation.type === "create") {
+        throw new ChainError("invalidDidDocument", "create after genesis");
       }
-    }
-
-    const doc = generateDoc(did, anchor);
-    const created = standardDatetime(doc.didDocumentMetadata.created);
-    const canonicalId = anchor.registration!.prefix ? did : undefined;
-    let versionNum = 1;
-    let confirmed = true;
-
-    for (const event of events) {
-      const operation = event.operation;
-      if (!operation) {
-        throw new ChainError("invalidDidDocument", "event without operation");
-      }
-      const versionId = await operationCid(operation);
-
-      if (operation.type === "create") {
-        doc.didDocumentMetadata = {
-          created,
-          ...(canonicalId ? { canonicalId } : {}),
-          versionId,
-          versionSequence: versionNum.toString(),
-          confirmed,
-        };
-        continue;
-      }
-
-      if (
-        opts.versionTime &&
-        new Date(String(event.time)) > new Date(opts.versionTime)
-      ) {
-        break;
-      }
-
-      confirmed =
-        confirmed && doc.didDocumentRegistration?.registry === event.registry;
-      if (opts.confirm && !confirmed) break;
-
-      if (doc.didDocumentMetadata.deactivated) {
-        throw new ChainError(
-          "invalidDidDocument",
-          "operation after deactivation",
-        );
-      }
-
-      // Signature by the then-current key (controller's for assets).
-      if (doc.didDocument.controller) {
-        const controller = await resolveState(
-          String(doc.didDocument.controller),
-          {
-            versionTime: operation.proof?.created,
-            confirm: true,
-            depth: opts.depth + 1,
-          },
-        );
-        if (!verifySignature(operation, firstKey(controller.didDocument))) {
+      try {
+        if ((await eventTarget(event)) !== did) {
           throw new ChainError(
             "invalidDidDocument",
-            "update signature invalid",
+            index === 0
+              ? "DID does not match the CID of its genesis operation"
+              : `event ${index} targets another DID`,
           );
         }
-      } else if (!verifySignature(operation, firstKey(doc.didDocument))) {
-        throw new ChainError("invalidDidDocument", "update signature invalid");
-      }
-
-      // Hash linkage to the previous operation.
-      if (
-        !operation.previd ||
-        operation.previd !== doc.didDocumentMetadata.versionId
-      ) {
-        throw new ChainError("invalidDidDocument", "broken previd chain link");
-      }
-
-      const updated = standardDatetime(event.time);
-
-      if (operation.type === "update") {
-        versionNum += 1;
-        const next = operation.doc ?? {};
-        if (next.didDocument !== undefined) doc.didDocument = next.didDocument;
-        if (next.didDocumentData !== undefined) {
-          doc.didDocumentData = next.didDocumentData;
+        versionIds.push(await generateCID(operation));
+        legacyIds.push(await legacyNumericCid(operation));
+      } catch (cause) {
+        if (cause instanceof OperationError) {
+          throw new ChainError("invalidDidDocument", cause.message);
         }
-        if (next.didDocumentRegistration !== undefined) {
-          doc.didDocumentRegistration = next.didDocumentRegistration;
-        }
-        doc.didDocumentMetadata = {
-          created,
-          updated,
-          ...(canonicalId ? { canonicalId } : {}),
-          versionId,
-          versionSequence: versionNum.toString(),
-          confirmed,
-        };
-        continue;
+        throw cause;
       }
+    }
+    const times = events.map((event) => timestampMillis(String(event.time)));
+    const confirmed = [...historyEntries(events)].map(
+      (entry) => entry.confirmed,
+    );
+    return { did, events, versionIds, legacyIds, times, confirmed };
+  }
 
-      if (operation.type === "delete") {
-        versionNum += 1;
-        doc.didDocument = { id: did };
-        doc.didDocumentData = {};
-        doc.didDocumentMetadata = {
-          deactivated: true,
-          created,
-          deleted: updated,
-          ...(canonicalId ? { canonicalId } : {}),
-          versionId,
-          versionSequence: versionNum.toString(),
-          confirmed,
-        };
-        continue;
-      }
+  /**
+   * Per-resolution state and budget: one export per DID (at most `maxDids`),
+   * one deadline, and each DID's verified document after each of its
+   * operations — built once, in order, and shared by every lookup.
+   */
+  class Session {
+    readonly deadline = Date.now() + deadlineMs;
+    private readonly chains = new Map<string, Promise<Chain | null>>();
+    readonly states = new Map<string, DidCidDocument[]>();
 
-      throw new ChainError(
-        "invalidDidDocument",
-        `unknown operation type ${String(operation.type)}`,
+    deadlineError(): ChainError {
+      return new ChainError(
+        "internalError",
+        `resolution exceeded its ${deadlineMs} ms deadline`,
       );
     }
 
-    return doc;
+    checkDeadline(): void {
+      if (Date.now() > this.deadline) throw this.deadlineError();
+    }
+
+    async chain(did: string): Promise<Chain | null> {
+      let chain = this.chains.get(did);
+      if (!chain) {
+        if (this.chains.size >= maxDids) {
+          throw new ChainError(
+            "internalError",
+            `resolution needs more than ${maxDids} DID histories`,
+          );
+        }
+        chain = loadChain(did, this);
+        this.chains.set(did, chain);
+      }
+      return chain;
+    }
   }
 
-  /** Fetch + verify + fold one DID (recursion entry for asset controllers). */
-  async function resolveState(
+  /** `isSelfControlledAgent`: an agent genesis, no foreign controller, live. */
+  function isSelfControlledAgent(doc: DidCidDocument): boolean {
+    const id = doc.didDocument?.id;
+    const controller = doc.didDocument?.controller;
+    return (
+      doc.creationType === "agent" &&
+      !!id &&
+      (controller === undefined || controller === id) &&
+      !doc.didDocumentMetadata?.deactivated
+    );
+  }
+
+  /** `isAnchored`: the DID's confirmed prefix carries chain positions. */
+  async function isAnchored(
     did: string,
-    opts: { versionTime?: string; confirm?: boolean; depth: number },
-  ): Promise<DocState> {
-    if (opts.depth > MAX_CONTROLLER_DEPTH) {
+    registry: unknown,
+    session: Session,
+  ): Promise<boolean> {
+    if (!registry || isUnanchoredRegistry(registry)) return false;
+    const chain = await session.chain(did);
+    return chain ? hasAnchoredPrefix(chain.events) : false;
+  }
+
+  /**
+   * A controller document, as the reference's `resolveDIDAt` returns it to
+   * authorization: undefined when the DID does not resolve (no registration),
+   * and for an asset — which can never be a self-controlled agent owner — its
+   * genesis alone, without walking its own controller graph.
+   */
+  async function controllerAt(
+    did: unknown,
+    opts: ResolveAtOptions,
+    session: Session,
+    depth: number,
+  ): Promise<DidCidDocument | undefined> {
+    if (!validDidSyntax(did)) return undefined;
+    const chain = await session.chain(did);
+    if (!chain) return undefined;
+    const genesis = chain.events[0].operation as Operation;
+    if (genesis.registration?.type !== "agent") {
+      return {
+        didDocument: { id: did, controller: genesis.controller },
+        didDocumentMetadata: {},
+        didDocumentRegistration: genesis.registration,
+        creationType: String(genesis.registration?.type),
+      };
+    }
+    return resolveAt(did, opts, session, depth + 1);
+  }
+
+  /**
+   * `controllerForEvent`: the owner document that authorizes an asset
+   * operation. With a chain receipt and an owner whose confirmed prefix is
+   * chain-anchored, the owner's events on the receipt's registry must precede
+   * its ordinal and events on other registries its block time; otherwise the
+   * owner at the operation's `proof.created` (protocol-rules.md, Operation
+   * Authorization; archon #1131, #1134).
+   */
+  async function controllerForEvent(
+    controllerDid: unknown,
+    operation: Operation,
+    event: GatekeeperEvent,
+    session: Session,
+    depth: number,
+  ): Promise<DidCidDocument | undefined> {
+    if (
+      !isUnanchoredRegistry(event.registry) &&
+      hasChainMetadata(event.ordinal, event.registration)
+    ) {
+      const doc = await controllerAt(
+        controllerDid,
+        {
+          confirm: true,
+          versionTime: String(event.time),
+          versionOrdinal: {
+            registry: event.registry,
+            ordinal: event.ordinal as number[],
+          },
+        },
+        session,
+        depth,
+      );
+      if (
+        doc &&
+        typeof controllerDid === "string" &&
+        (await isAnchored(
+          controllerDid,
+          doc.didDocumentRegistration?.registry,
+          session,
+        ))
+      ) {
+        return doc;
+      }
+    }
+    return controllerAt(
+      controllerDid,
+      { confirm: true, versionTime: operation.proof?.created },
+      session,
+      depth,
+    );
+  }
+
+  /**
+   * `validatePredecessor`: `previd` names the complete predecessor operation
+   * — its canonical id or the content-derived TypeScript numeric-key id
+   * (protocol-rules.md, Identity and admission; Operation Authorization).
+   */
+  function validatePredecessor(
+    chain: Chain,
+    index: number,
+    operation: Operation,
+    previous: DidCidDocument,
+  ): void {
+    const reference = operation.previd;
+    const versionId = previous.didDocumentMetadata?.versionId;
+    if (
+      !versionId ||
+      typeof reference !== "string" ||
+      !reference ||
+      (reference !== versionId && reference !== chain.legacyIds[index - 1])
+    ) {
+      throw new OperationError("previd");
+    }
+  }
+
+  /** `authorizeCreateOperation`. */
+  async function authorizeCreateOperation(
+    operation: Operation,
+    event: GatekeeperEvent,
+    session: Session,
+    depth: number,
+  ): Promise<boolean> {
+    const controller =
+      operation.registration?.type === "asset" &&
+      operation.controller &&
+      verifyProofFormat(operation.proof)
+        ? await controllerForEvent(
+            operation.controller,
+            operation,
+            event,
+            session,
+            depth,
+          )
+        : undefined;
+    if (
+      controller?.didDocumentRegistration &&
+      !isSelfControlledAgent(controller)
+    ) {
+      return false;
+    }
+    const valid = verifyCreateOperation(operation, controller);
+    if (!valid || !validRegistration(operation.registration)) return false;
+    if (operation.registration?.type === "agent") {
+      return operation.controller === undefined;
+    }
+    return !!controller && isSelfControlledAgent(controller);
+  }
+
+  /**
+   * `authorizeOperation`: select the authorizing document once, then verify
+   * the proof against it (protocol-rules.md, State transitions; Operation
+   * Authorization).
+   */
+  async function authorizeOperation(
+    chain: Chain,
+    index: number,
+    operation: Operation,
+    current: DidCidDocument | undefined,
+    event: GatekeeperEvent,
+    session: Session,
+    depth: number,
+  ): Promise<boolean> {
+    if (operation.type === "create") {
+      return authorizeCreateOperation(operation, event, session, depth);
+    }
+    if (operation.type !== "update" && operation.type !== "delete") {
+      return false;
+    }
+    if (!current) throw new OperationError("predecessor");
+    validatePredecessor(chain, index, operation, current);
+    const genesis = (chain.events[0].operation as Operation).registration;
+    const type = genesis?.type;
+    if (!verifyProofFormat(operation.proof)) throw new OperationError("proof");
+    if (!type || current.didDocumentMetadata?.deactivated) {
+      return verifyUpdateOperation(operation, current);
+    }
+    if (
+      operation.doc?.didDocumentRegistration !== undefined &&
+      !validRegistration(
+        operation.doc.didDocumentRegistration,
+        genesis,
+        current.didDocumentRegistration,
+      )
+    ) {
+      return false;
+    }
+    // An explicit null is not a document replacement (protocol-rules.md,
+    // Identity and admission); the reference's `??` would fall back to the
+    // predecessor here, the Rust port refuses (see REFERENCE-MAP.md).
+    const next =
+      operation.doc?.didDocument !== undefined
+        ? operation.doc.didDocument
+        : current.didDocument;
+    if (!isRecord(next) || next.id !== operation.did) return false;
+    const methods = (next as DidDocument).verificationMethod;
+    if (Array.isArray(methods)) {
+      const ids = methods
+        .map((method) =>
+          isRecord(method) && typeof method.id === "string"
+            ? absoluteKeyId(method.id, next.id)
+            : undefined,
+        )
+        .filter((id) => id !== undefined);
+      if (new Set(ids).size !== ids.length) return false;
+    }
+
+    let authority: DidCidDocument;
+    if (type === "agent") {
+      if (
+        !isSelfControlledAgent(current) ||
+        (next.controller !== undefined && next.controller !== operation.did)
+      ) {
+        return false;
+      }
+      authority = current;
+    } else if (type === "asset") {
+      const controller = current.didDocument?.controller;
+      if (!controller || !next.controller) return false;
+      const owner = await controllerForEvent(
+        controller,
+        operation,
+        event,
+        session,
+        depth,
+      );
+      if (!owner?.didDocumentRegistration) {
+        throw new OperationError("controller not found");
+      }
+      if (!isSelfControlledAgent(owner)) return false;
+      if (next.controller !== controller) {
+        const transferee = await controllerForEvent(
+          next.controller,
+          operation,
+          event,
+          session,
+          depth,
+        );
+        if (!transferee?.didDocumentRegistration) {
+          throw new OperationError("controller not found");
+        }
+        if (!isSelfControlledAgent(transferee)) return false;
+      }
+      authority = owner;
+    } else {
+      return false;
+    }
+    return verifyUpdateOperation(operation, authority);
+  }
+
+  /** Authorize one operation; refuse closed. */
+  async function authorize(
+    chain: Chain,
+    index: number,
+    current: DidCidDocument | undefined,
+    event: GatekeeperEvent,
+    session: Session,
+    depth: number,
+  ): Promise<void> {
+    let valid: boolean;
+    try {
+      valid = await authorizeOperation(
+        chain,
+        index,
+        event.operation as Operation,
+        current,
+        event,
+        session,
+        depth,
+      );
+    } catch (cause) {
+      if (cause instanceof OperationError) {
+        throw new ChainError(
+          "invalidDidDocument",
+          `operation ${index} refused: ${cause.message}`,
+        );
+      }
+      throw cause;
+    }
+    if (!valid) {
+      throw new ChainError(
+        "invalidDidDocument",
+        `operation ${index} signature or authorization invalid`,
+      );
+    }
+  }
+
+  /**
+   * The verified document after operation `stop`, built incrementally: each
+   * operation is authorized against the document before it, exactly once per
+   * resolution, and every lookup of the DID (one per asset operation it owns)
+   * reuses the states already built instead of replaying the history.
+   */
+  async function stateAt(
+    chain: Chain,
+    stop: number,
+    session: Session,
+    depth: number,
+  ): Promise<DidCidDocument> {
+    const did = chain.did;
+    let states = session.states.get(did);
+    if (!states) {
+      states = [];
+      session.states.set(did, states);
+    }
+    while (states.length <= stop) {
+      session.checkDeadline();
+      const index = states.length;
+      const event = chain.events[index];
+      const operation = event.operation as Operation;
+      const versionId = chain.versionIds[index];
+      if (index === 0) {
+        await authorize(chain, 0, undefined, event, session, depth);
+        const doc = generateDoc(operation, did);
+        const canonicalId = doc.didDocumentMetadata.canonicalId;
+        doc.didDocumentMetadata = {
+          created: standardDatetime(doc.didDocumentMetadata.created),
+          ...(canonicalId ? { canonicalId } : {}),
+          versionId,
+          versionSequence: "1",
+          confirmed: true,
+        };
+        states.push(doc);
+        continue;
+      }
+      const previous = states[index - 1];
+      await authorize(chain, index, previous, event, session, depth);
+      const { created, canonicalId } = previous.didDocumentMetadata;
+      const updated = standardDatetime(event.time);
+      const next: DidCidDocument = { ...previous };
+      applyComponents(next, operation, did);
+      next.didDocumentMetadata =
+        operation.type === "update"
+          ? {
+              created,
+              updated,
+              ...(canonicalId ? { canonicalId } : {}),
+              versionId,
+              versionSequence: String(index + 1),
+              confirmed: chain.confirmed[index],
+            }
+          : {
+              deactivated: true,
+              created,
+              deleted: updated,
+              ...(canonicalId ? { canonicalId } : {}),
+              versionId,
+              versionSequence: String(index + 1),
+              confirmed: chain.confirmed[index],
+            };
+      states.push(next);
+    }
+    return states[stop];
+  }
+
+  /**
+   * `resolveDIDAt` with `verify: true`: apply the accepted history up to the
+   * requested bound — the ordinal for events on the cutoff's registry, the
+   * time for others — or the requested sequence, or, with `confirm`, the
+   * first operation not confirmed on its expected registry; nothing past the
+   * bound is verified or applied (resolution.md, Resolution Algorithm).
+   */
+  async function resolveAt(
+    did: string,
+    opts: ResolveAtOptions,
+    session: Session,
+    depth: number,
+  ): Promise<DidCidDocument> {
+    if (depth > MAX_CONTROLLER_DEPTH) {
       throw new ChainError("invalidDidDocument", "controller chain too deep");
     }
-    const segments = did.split(":");
-    if (
-      segments.length !== 3 ||
-      segments[0] !== "did" ||
-      segments[1] !== "cid" ||
-      segments[2].length > MAX_SUFFIX_CHARS
-    ) {
-      throw new ChainError("invalidDid", "malformed did:cid identifier");
+    const chain = await session.chain(did);
+    if (!chain) throw new ChainError("notFound", "no events for DID");
+
+    const timeBound =
+      opts.versionTime === undefined
+        ? undefined
+        : timestampMillis(opts.versionTime);
+    let stop = 0;
+    for (let index = 1; index < chain.events.length; index++) {
+      const event = chain.events[index];
+      if (
+        opts.versionOrdinal &&
+        event.registry === opts.versionOrdinal.registry
+      ) {
+        if (
+          Array.isArray(event.ordinal) &&
+          compareOrdinals(event.ordinal, opts.versionOrdinal.ordinal) >= 0
+        ) {
+          break;
+        }
+      } else if (timeBound !== undefined && chain.times[index] > timeBound) {
+        break;
+      }
+      // Before operation `index`, `index` versions have been applied.
+      if (opts.versionSequence && index === opts.versionSequence) break;
+      if (opts.confirm && !chain.confirmed[index]) break;
+      stop = index;
     }
-    try {
-      CID.parse(segments[2]);
-    } catch {
-      throw new ChainError("invalidDid", "identifier is not a valid CID");
-    }
-    const events = await fetchEvents(did);
-    if (!events) throw new ChainError("notFound", "no events for DID");
-    return foldChain(did, events, opts);
+    return stateAt(chain, stop, session, depth);
   }
 
-  const cid = async (did: string): Promise<DIDResolutionResult> => {
+  /** `versionSequence` as the reference router parses it (parseInt, no NaN). */
+  function sequenceOption(value: unknown): number | undefined {
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+      const parsed = parseInt(value, 10);
+      return Number.isNaN(parsed) ? undefined : parsed;
+    }
+    return undefined;
+  }
+
+  const cid = async (
+    did: string,
+    _parsed?: unknown,
+    _resolver?: unknown,
+    resolutionOptions?: Record<string, unknown>,
+  ): Promise<DIDResolutionResult> => {
     try {
-      const state = await resolveState(did, { depth: 0 });
+      if (!validDidSyntax(did)) {
+        throw new ChainError("invalidDid", "malformed did:cid identifier");
+      }
+      // The conformant surface: confirmed, verified state; versionTime and
+      // versionSequence select a version (resolution.md, Resolution Options).
+      const state = await resolveAt(
+        did,
+        {
+          confirm: true,
+          versionTime:
+            typeof resolutionOptions?.versionTime === "string"
+              ? resolutionOptions.versionTime
+              : undefined,
+          versionSequence: sequenceOption(resolutionOptions?.versionSequence),
+        },
+        new Session(),
+        0,
+      );
       return {
         didResolutionMetadata: { contentType: "application/did+ld+json" },
-        didDocument: state.didDocument,
-        didDocumentMetadata: state.didDocumentMetadata,
+        didDocument: JSON.parse(
+          JSON.stringify(state.didDocument),
+        ) as DIDResolutionResult["didDocument"],
+        didDocumentMetadata: conformantMetadata(state.didDocumentMetadata),
       };
     } catch (cause) {
       if (cause instanceof ChainError) {
@@ -591,5 +840,5 @@ export function getResolver(options?: CidResolverOptions): ResolverRegistry {
     }
   };
 
-  return { cid } as ResolverRegistry;
+  return { cid } as unknown as ResolverRegistry;
 }

@@ -1,0 +1,115 @@
+{
+  "agent": {
+    "type": "create",
+    "created": "2026-09-22T00:00:00.000Z",
+    "registration": {
+      "version": 1,
+      "type": "agent",
+      "registry": "hyperswarm"
+    },
+    "publicJwk": {
+      "kty": "EC",
+      "crv": "secp256k1",
+      "x": "OSd_CMNPrDPDsV5YoWajZol2ZUGeXD8hR3XubkcWcX4",
+      "y": "yBLNwQllxyR5Omgo9b7LmJEfd1pGNiZZqzgqafZ4Qcs"
+    },
+    "proof": {
+      "type": "DataIntegrityProof",
+      "cryptosuite": "archon-ecdsa-secp256k1-jcs-2026",
+      "created": "2026-09-22T00:00:00.001Z",
+      "verificationMethod": "#key-1",
+      "proofPurpose": "capabilityInvocation",
+      "proofValue": "esafZoTsLCbrza6GTFuca4sFFHT4S4FJFT9KwBqNhMQXneC5gPgjdNraDML2UXZ0xHf4XScAFm-MZjV_jFsUFw"
+    }
+  },
+  "asset": {
+    "type": "create",
+    "created": "2026-09-22T00:00:01.000Z",
+    "registration": {
+      "version": 1,
+      "type": "asset",
+      "registry": "hyperswarm"
+    },
+    "controller": "did:cid:bagaaiera7apdjgpe7jleguoioddew7oqqxn2iqlsowktnbnqksf7bpzuntka",
+    "data": {},
+    "proof": {
+      "type": "DataIntegrityProof",
+      "cryptosuite": "archon-ecdsa-secp256k1-jcs-2026",
+      "created": "2026-09-22T00:00:01.001Z",
+      "verificationMethod": "did:cid:bagaaiera7apdjgpe7jleguoioddew7oqqxn2iqlsowktnbnqksf7bpzuntka#key-1",
+      "proofPurpose": "capabilityInvocation",
+      "proofValue": "9IBMDVoad50nqfV4N-RMHCb4kY-6Y5pg1to7hJc8DFlGGKg53_ikOzGq5wrvfC68oj4QI5dVdQHLajz7S99J_Q"
+    }
+  },
+  "rotation": {
+    "type": "update",
+    "did": "did:cid:bagaaiera7apdjgpe7jleguoioddew7oqqxn2iqlsowktnbnqksf7bpzuntka",
+    "previd": "bagaaiera7apdjgpe7jleguoioddew7oqqxn2iqlsowktnbnqksf7bpzuntka",
+    "doc": {
+      "didDocument": {
+        "@context": [
+          "https://www.w3.org/ns/did/v1"
+        ],
+        "id": "did:cid:bagaaiera7apdjgpe7jleguoioddew7oqqxn2iqlsowktnbnqksf7bpzuntka",
+        "verificationMethod": [
+          {
+            "id": "#key-2",
+            "controller": "did:cid:bagaaiera7apdjgpe7jleguoioddew7oqqxn2iqlsowktnbnqksf7bpzuntka",
+            "type": "EcdsaSecp256k1VerificationKey2019",
+            "publicKeyJwk": {
+              "kty": "EC",
+              "crv": "secp256k1",
+              "x": "0yuKivfjdnOfFnVwfItXxq2fAQxbqCxg2XO_ekK-V3w",
+              "y": "IeSj9ICGo6vRMWffZBI0u0faTH9GX0tq7ipG3guSQC0"
+            }
+          }
+        ],
+        "authentication": [
+          "#key-2"
+        ],
+        "assertionMethod": [
+          "#key-2"
+        ],
+        "capabilityInvocation": [
+          "#key-2"
+        ]
+      }
+    },
+    "proof": {
+      "type": "DataIntegrityProof",
+      "cryptosuite": "archon-ecdsa-secp256k1-jcs-2026",
+      "created": "2026-09-22T00:00:02.000Z",
+      "verificationMethod": "did:cid:bagaaiera7apdjgpe7jleguoioddew7oqqxn2iqlsowktnbnqksf7bpzuntka#key-1",
+      "proofPurpose": "capabilityInvocation",
+      "proofValue": "vaIoFAAKhfzYRY3hrJNZ4QepScthCTOEREgDN-J1yhBtFoYA5GxkkUXWVSMPQaVFZ4AKY4UMgYFxgEHGM5jH2g"
+    }
+  },
+  "deletion": {
+    "type": "delete",
+    "did": "did:cid:bagaaierancfl35mj7m4gejwewe2no335bkl527gjlz22dwba5sgybdvevt4q",
+    "previd": "bagaaierancfl35mj7m4gejwewe2no335bkl527gjlz22dwba5sgybdvevt4q",
+    "proof": {
+      "type": "DataIntegrityProof",
+      "cryptosuite": "archon-ecdsa-secp256k1-jcs-2026",
+      "created": "2026-09-22T00:00:03.000Z",
+      "verificationMethod": "did:cid:bagaaiera7apdjgpe7jleguoioddew7oqqxn2iqlsowktnbnqksf7bpzuntka#key-2",
+      "proofPurpose": "capabilityInvocation",
+      "proofValue": "dZGXrKfuK7exvAVncxlzblvjsuph0bi1o8gn9cQKsh9kS9p08D4X3Huweu-b6cKbdF8c9P1-Hwx35Iysx0No2w"
+    }
+  },
+  "deletedResult": {
+    "didDocument": {
+      "id": "did:cid:bagaaierancfl35mj7m4gejwewe2no335bkl527gjlz22dwba5sgybdvevt4q"
+    },
+    "didResolutionMetadata": {
+      "contentType": "application/did+ld+json"
+    },
+    "didDocumentMetadata": {
+      "created": "2026-09-22T00:00:01Z",
+      "deleted": "2026-09-22T00:00:03Z",
+      "deactivated": true,
+      "versionSequence": "2",
+      "versionId": "bagaaierafiknyfexk6badnlvglrmkr57lbijuippd3vp6kql5qtj3i6t267q"
+    }
+  }
+}
