@@ -2,6 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "thisdid-resolver",
   "main": "src/index.ts",
+  "workers_dev": false,
+  "preview_urls": false,
   "alias": {
     "did-resolver": "./vendor/did-resolver/lib/resolver.mjs"
   },
