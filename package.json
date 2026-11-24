@@ -52,7 +52,7 @@
     "hono": "4.13.18"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260812.1",
+    "@cloudflare/workers-types": "5.20261123.1",
     "@eslint/js": "10.0.1",
     "axios": "1.21.1",
     "concurrently": "10.0.4",
@@ -63,6 +63,6 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.67.0",
     "vitest": "4.1.10",
-    "wrangler": "4.121.0"
+    "wrangler": "4.167.0"
   }
 }
